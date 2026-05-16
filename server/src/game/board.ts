@@ -72,13 +72,14 @@ const SPECIAL_OFFSETS: Record<number, Cell['kind']> = {
 
 // ---------- Geometry ----------
 //
-// 21 cells per side. Ring traversal walks clockwise starting from red's
-// takeoff at the bottom-left corner.
+// 21 cells per side. Ring traversal walks clockwise (visually on screen,
+// where SVG y increases downward) starting from red's takeoff at the
+// bottom-left corner.
 //
-//   side 0 (bottom edge): idx 0..20   — left → right
-//   side 1 (right edge):  idx 21..41  — bottom → top
-//   side 2 (top edge):    idx 42..62  — right → left
-//   side 3 (left edge):   idx 63..83  — top → bottom
+//   side 0 (left edge):   idx 0..20   — bottom → top   (red quadrant)
+//   side 1 (top edge):    idx 21..41  — left → right   (yellow quadrant)
+//   side 2 (right edge):  idx 42..62  — top → bottom   (blue quadrant)
+//   side 3 (bottom edge): idx 63..83  — right → left   (green quadrant)
 
 const LO = 0.08;
 const HI = 0.92;
@@ -88,10 +89,10 @@ function ringPosition(idx: number): { x: number; y: number } {
   const within = idx % QUADRANT_LEN;
   const t = within / QUADRANT_LEN; // 0..(20/21)
   switch (side) {
-    case 0: return { x: LO + (HI - LO) * t, y: HI };          // bottom
-    case 1: return { x: HI, y: HI - (HI - LO) * t };          // right
-    case 2: return { x: HI - (HI - LO) * t, y: LO };          // top
-    default: return { x: LO, y: LO + (HI - LO) * t };         // left
+    case 0: return { x: LO, y: HI - (HI - LO) * t };          // left edge bottom→top
+    case 1: return { x: LO + (HI - LO) * t, y: LO };          // top edge left→right
+    case 2: return { x: HI, y: LO + (HI - LO) * t };          // right edge top→bottom
+    default: return { x: HI - (HI - LO) * t, y: HI };         // bottom edge right→left
   }
 }
 
@@ -106,17 +107,17 @@ function colorAtRingIndex(idx: number): Color {
 // (k = COLOR_ROT[c]) so each color's hangar + landing strip sit adjacent to
 // that color's takeoff corner.
 //
-// Takeoffs walk visually counter-clockwise on screen (because SVG y is
-// inverted): red=bottom-left → yellow=bottom-right → blue=top-right →
-// green=top-left. So we rotate red's canonical layout in the same visual
-// direction: (x, y) → (y, 1 - x).
+// Takeoffs walk visually clockwise on screen: red=bottom-left →
+// yellow=top-left → blue=top-right → green=bottom-right. So we rotate red's
+// canonical layout in the same visual direction (screen-CW about the
+// center): (x, y) → (1 - y, x).
 
 type Pt = { x: number; y: number };
 function rotateForColor(p: Pt, k: number): Pt {
   let { x, y } = p;
   for (let i = 0; i < k; i++) {
-    const nx = y;
-    const ny = 1 - x;
+    const nx = 1 - y;
+    const ny = x;
     x = nx; y = ny;
   }
   return { x, y };
@@ -128,8 +129,10 @@ const COLOR_ROT: Record<Color, number> = { red: 0, yellow: 1, blue: 2, green: 3 
 // - Hangar: 4 slots in a tight 2×2 cluster tucked into the bottom-left
 //   corner OUTSIDE the ring, well clear of ring cells.
 // - Landing entry on the ring at idx 68 (= 0 - 16 mod 84) which sits on the
-//   left edge just below the top-left corner: (LO, LO + (HI-LO)*5/21).
-// - Landing strip walks diagonally inward from that ring point to home.
+//   bottom edge near the bottom-right corner (in green's quadrant):
+//   ≈ (0.72, 0.92).
+// - Landing strip walks diagonally inward (up-left) from that ring point to
+//   home in the bottom-left quadrant of the center.
 const RED_HANGAR: Pt[] = [
   { x: 0.03, y: 0.94 }, { x: 0.07, y: 0.94 },
   { x: 0.03, y: 0.98 }, { x: 0.07, y: 0.98 },
@@ -137,12 +140,13 @@ const RED_HANGAR: Pt[] = [
 // Note: red's home is offset toward red's bottom-left corner so that the
 // four homes don't visually overlap at the dead center.
 const RED_HOME: Pt = { x: 0.46, y: 0.54 };
-// 4 landing-strip cells: from the ring entry (≈ 0.08, 0.28) inward to home.
+// 4 landing-strip cells: from the ring entry (≈ 0.72, 0.92) diagonally
+// up-left toward home (0.46, 0.54).
 const RED_LANDING: Pt[] = [
-  { x: 0.16, y: 0.32 },
-  { x: 0.24, y: 0.38 },
-  { x: 0.32, y: 0.44 },
-  { x: 0.40, y: 0.50 },
+  { x: 0.67, y: 0.84 },
+  { x: 0.62, y: 0.76 },
+  { x: 0.56, y: 0.68 },
+  { x: 0.51, y: 0.60 },
 ];
 
 const HANGAR_LAYOUT: Record<Color, Pt[]> = {

@@ -17,18 +17,20 @@ export default function Hud() {
         if (!seat?.player) return null;
         const hand = state.hands[c];
         const isTurn = state.turn === c;
+        const isMe = c === mySeat;
+        const homed = state.planes[c].filter(p => p.state === 'home').length;
         return (
           <div key={c} className={`hud-player hud-${c} ${isTurn ? 'turn' : ''}`}>
             <div className="hud-name">
               <span className={`dot dot-${c}`} />
               <strong>{LABEL[c]}</strong> {seat.player.nickname}
-              {c === mySeat && <span className="me"> (you)</span>}
+              {isMe && <span className="me"> (you)</span>}
               {isTurn && <span className="badge">turn</span>}
             </div>
             <div className="hud-stats">
-              <span>📡 {hand.radars}</span>
-              <span>🛩 {hand.missiles.length}</span>
-              <span>🏠 {state.planes[c].filter(p => p.state === 'home').length}/4</span>
+              <span title="Radars">📡 {hand.radars}</span>
+              <span title="Missiles total">🛩 {hand.missiles.length}</span>
+              <span title="Planes home">🏠 {homed}/4</span>
               {hand.skipRounds > 0 && <span className="skip">skip×{hand.skipRounds}</span>}
               {hand.shield && <span className="shield">🛡</span>}
             </div>

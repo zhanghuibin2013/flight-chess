@@ -61,21 +61,27 @@ export default function Room() {
       </div>
 
       <div className="options">
-        <h3>Options{isHost ? '' : ' (host only)'}</h3>
-        <label>
-          Takeoff Difficulty
+        <h3>Game Options {isHost ? '' : <small>(host only)</small>}</h3>
+        <div className="option-row">
+          <label className="option-label">Takeoff Difficulty</label>
           {isHost ? (
-            <select value={currentDifficulty} onChange={e => onDifficultyChange(e.target.value as Difficulty)}>
+            <select className="option-input" value={currentDifficulty} onChange={e => onDifficultyChange(e.target.value as Difficulty)}>
               {(Object.keys(DIFFICULTY_PRESETS) as Difficulty[]).map(d => (
                 <option key={d} value={d}>{DIFFICULTY_LABELS[d]}</option>
               ))}
             </select>
           ) : (
-            <span>{DIFFICULTY_LABELS[currentDifficulty]}</span>
+            <span className="option-value">{DIFFICULTY_LABELS[currentDifficulty]}</span>
           )}
-        </label>
-        <div>Turn timeout: {Math.round(room.options.turnTimeoutMs / 1000)}s</div>
-        <div>Victory: {room.options.victory}</div>
+        </div>
+        <div className="option-row">
+          <label className="option-label">Turn timeout</label>
+          <span className="option-value">{Math.round(room.options.turnTimeoutMs / 1000)}s</span>
+        </div>
+        <div className="option-row">
+          <label className="option-label">Victory</label>
+          <span className="option-value">{room.options.victory}</span>
+        </div>
       </div>
 
       <div className="actions">

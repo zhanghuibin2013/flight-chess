@@ -35,6 +35,11 @@ interface Store {
   // last error
   lastError: string | null;
 
+  // transient UI: which own-plane the user is hovering in the action panel
+  // (used to render a hover-preview move-curve on the board).
+  hoverPlaneIdx: number | null;
+  setHoverPlane(idx: number | null): void;
+
   // actions
   setNickname(n: string): void;
   createRoom(nickname: string): void;
@@ -106,6 +111,8 @@ export const useStore = create<Store>((set, get) => {
     chat: [],
     myCardEvents: [],
     lastError: null,
+    hoverPlaneIdx: null,
+    setHoverPlane(idx) { set({ hoverPlaneIdx: idx }); },
 
     setNickname(n) {
       localStorage.setItem('fkzz.nickname', n);

@@ -46,7 +46,14 @@ h1,h2,h3,h4{font-weight:700}
 .seat-red.taken{border-color:var(--red)}.seat-yellow.taken{border-color:var(--yellow)}.seat-blue.taken{border-color:var(--blue)}.seat-green.taken{border-color:var(--green)}
 .seat-color{font-weight:700;font-size:15px}
 .seat-player{font-size:13px;color:var(--muted)}
-.room .options{font-size:13px;color:var(--muted)}
+.room .options{font-size:13px;color:var(--text);background:var(--surface);border-radius:var(--radius);padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.room .options h3{font-size:15px;margin-bottom:10px;color:var(--text)}
+.room .options h3 small{font-weight:400;color:var(--muted);font-size:12px;margin-left:6px}
+.room .option-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f0f0f0}
+.room .option-row:last-child{border-bottom:none}
+.room .option-label{flex:0 0 130px;font-size:13px;font-weight:600;color:var(--muted)}
+.room .option-input{flex:1;font-size:13px}
+.room .option-value{flex:1;font-size:13px;color:var(--text)}
 .room .actions{display:flex;gap:8px;justify-content:center}
 
 /* ===== Game Layout ===== */
@@ -86,18 +93,44 @@ h1,h2,h3,h4{font-weight:700}
 
 /* ===== Action Panel ===== */
 .action-panel{background:var(--surface);border-radius:var(--radius);padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.action-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #eee}
+.action-header button.ghost{font-size:12px;padding:2px 6px;color:#d32f2f}
+.action-header button.ghost:hover{color:#b71c1c;background:#fdecea;border-radius:4px}
 .dice{display:flex;align-items:center;gap:8px;font-size:15px}
-.last-dice{font-size:20px}
+.last-dice{font-size:22px;display:inline-block;transform-origin:50% 50%}
+.dice-rolling{animation:diceWildSpin .35s linear infinite;color:#1565c0;font-size:26px;text-shadow:0 0 8px rgba(21,101,192,.35)}
+.dice-pop{animation:dicePop .55s cubic-bezier(.34,1.56,.64,1) both;color:#2e7d32}
+@keyframes diceWildSpin{
+  0%   {transform:rotate(0deg)   scale(1.0) translateY(0)}
+  20%  {transform:rotate(180deg) scale(1.15) translateY(-6px)}
+  40%  {transform:rotate(360deg) scale(0.95) translateY(2px)}
+  60%  {transform:rotate(540deg) scale(1.15) translateY(-6px)}
+  80%  {transform:rotate(720deg) scale(0.95) translateY(2px)}
+  100% {transform:rotate(900deg) scale(1.0) translateY(0)}
+}
+@keyframes dicePop{
+  0%   {transform:scale(.4) rotate(-30deg);opacity:.3}
+  55%  {transform:scale(1.4) rotate(8deg);opacity:1}
+  80%  {transform:scale(.92) rotate(-3deg)}
+  100% {transform:scale(1)   rotate(0);opacity:1}
+}
 .chain{font-size:12px;color:var(--red);font-weight:700}
 .phase{font-size:11px;color:var(--muted);margin:4px 0}
 .prompt p{font-size:13px;margin-bottom:6px}
 .plane-row{display:flex;gap:6px;flex-wrap:wrap}
-.plane-btn{border-radius:50%;width:40px;height:40px;font-weight:700;font-size:14px;border:2px solid}
+.plane-btn{border-radius:50%;width:40px;height:40px;font-weight:700;font-size:14px;border:2px solid;position:relative}
 .plane-red{border-color:var(--red);color:var(--red)}.plane-yellow{border-color:var(--yellow);color:#7c6f00}.plane-blue{border-color:var(--blue);color:var(--blue)}.plane-green{border-color:var(--green);color:var(--green)}
+.plane-btn.recommended{box-shadow:0 0 0 3px #ffeb3b,0 0 12px 2px rgba(255,193,7,.55);animation:pulseRec 1.2s ease-in-out infinite}
+@keyframes pulseRec{0%,100%{box-shadow:0 0 0 3px #ffeb3b,0 0 8px 1px rgba(255,193,7,.4)}50%{box-shadow:0 0 0 3px #ffeb3b,0 0 16px 4px rgba(255,193,7,.7)}}
+.suggest-hint{font-size:12px;color:#f57f17;font-weight:700;margin-left:4px}
 .hand{margin-top:8px}
 .hand h4{font-size:13px;margin-bottom:4px}
 .hand-card{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px}
 .hand-card select{width:auto;max-width:160px;font-size:12px}
+.arsenal-summary{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text);background:#f7f9fc;border-radius:6px;padding:6px 8px;margin-bottom:4px}
+.arsenal-row{display:flex;justify-content:space-between}
+.arsenal-row strong{font-weight:700;color:var(--text)}
+.hand-actions{margin-top:6px;border-top:1px dashed #eee;padding-top:6px}
 
 /* ===== Modal Overlay ===== */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:50;animation:fadeIn .15s}

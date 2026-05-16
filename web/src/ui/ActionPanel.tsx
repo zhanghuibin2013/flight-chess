@@ -1,9 +1,92 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../state/store';
-import type { Color } from '@fkzz/shared';
+import type { Color, MissileKind, BoardSnapshot, GameState } from '@fkzz/shared';
+
+const MISSILE_KINDS: MissileKind[] = ['aam', 'sam', 'arm', 'cruise'];
+const MISSILE_LABELS: Record<MissileKind, string> = {
+  aam: 'AAM (空空)',
+  sam: 'SAM (地空)',
+  arm: 'ARM (反辐射)',
+  cruise: 'Cruise (巡航)',
+};
+
+const PATH_LEN_TO_HOME = 73;
+const LANDING_START_STEP = 68;
+
+/** Return cellId on `color`'s path at the given progress. */
+function cellIdAt(board: BoardSnapshot, color: Color, progress: number): number {
+  const path = board.paths[color];
+  if (progress >= PATH_LEN_TO_HOME) return path.home;
+  if (progress >= LANDING_START_STEP) return path.landing[progress - LANDING_START_STEP]!;
+  return path.ring[progress]!;
+}
+
+/** Best-plane recommendation among the prompt's candidates, by priority list:
+ *  1) reaches home   2) hits own shortcut entry   3) missile factory
+ *  4) radar factory  5) library (if QA deck non-empty)
+ *  6) (takeoff)      7) closest to home (highest progress) */
+function recommendPlaneIdx(
+  board: BoardSnapshot,
+  state: GameState,
+  color: Color,
+  candidates: number[],
+  roll: number | null,
+): { idx: number; reason: string } | null {
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) {
+    return {
+      idx: candidates[0]!,
+      reason: roll === null ? 'only candidate to take off' : 'only movable plane',
+    };
+  }
+
+  // Takeoff prompt: pick the lowest-index plane (priority 6).
+  if (roll === null) {
+    return { idx: Math.min(...candidates), reason: 'take off a new plane (lowest index)' };
+  }
+
+  const qaAvailable = state.deckCounts.questions > 0;
+
+  type Score = { idx: number; tier: number; progress: number; reason: string };
+  const scored: Score[] = candidates.map(idx => {
+    const plane = state.planes[color][idx]!;
+    const fromProgress = plane.progress ?? 0;
+    // Bounce-back when overshoot.
+    let target = fromProgress + roll;
+    let bounced = false;
+    if (target > PATH_LEN_TO_HOME) {
+      target = PATH_LEN_TO_HOME - (target - PATH_LEN_TO_HOME);
+      bounced = true;
+    }
+    const reachesHome = !bounced && target >= PATH_LEN_TO_HOME;
+    const destId = cellIdAt(board, color, target);
+    const cell = board.cells.find(c => c.id === destId);
+    const isShortcut = cell?.kind === 'shortcutEntry' && cell?.color === color;
+    const isMissile = cell?.kind === 'missileFactory';
+    const isRadar = cell?.kind === 'radarFactory';
+    const isLibrary = cell?.kind === 'library' && qaAvailable;
+
+    let tier = 99;
+    let reason = `closest to home (progress ${fromProgress}/${PATH_LEN_TO_HOME})`;
+    if (reachesHome) { tier = 1; reason = 'reaches home 🏠'; }
+    else if (isShortcut) { tier = 2; reason = 'enters highway shortcut 🛣'; }
+    else if (isMissile) { tier = 3; reason = 'lands on missile factory 🛩'; }
+    else if (isRadar) { tier = 4; reason = 'lands on radar factory 📡'; }
+    else if (isLibrary) { tier = 5; reason = 'lands on library 📚 (Q&A)'; }
+    else { tier = 7; }
+
+    return { idx, tier, progress: fromProgress, reason };
+  });
+
+  // Lowest tier wins; within same tier, highest progress (closest to home) wins.
+  scored.sort((a, b) => a.tier - b.tier || b.progress - a.progress || a.idx - b.idx);
+  const best = scored[0]!;
+  return { idx: best.idx, reason: best.reason };
+}
 
 export default function ActionPanel() {
   const state = useStore(s => s.state);
+  const board = useStore(s => s.board);
   const isMyTurn = useStore(s => s.isMyTurn());
   const mySeat = useStore(s => s.mySeat()) as Color | null;
   const myPrompt = useStore(s => s.myPrompt());
@@ -11,66 +94,175 @@ export default function ActionPanel() {
   const choosePlane = useStore(s => s.choosePlane);
   const chooseTakeoff = useStore(s => s.chooseTakeoff);
   const playCard = useStore(s => s.playCard);
+  const leaveRoom = useStore(s => s.leaveRoom);
+  const setHoverPlane = useStore(s => s.setHoverPlane);
 
-  if (!state || !mySeat) return null;
+  if (!state || !mySeat) {
+    // Spectator / not seated: still allow exit.
+    return (
+      <div className="action-panel">
+        <div className="action-header">
+          <strong>Spectating</strong>
+          <button className="ghost" onClick={() => { if (confirm('Leave the game?')) leaveRoom(); }}>Exit</button>
+        </div>
+      </div>
+    );
+  }
   const myMissiles = state.hands[mySeat].missiles;
   const myRewards = state.hands[mySeat].heldRewards;
+  const myRadars = state.hands[mySeat].radars;
+  const missileCounts: Record<MissileKind, number> = { aam: 0, sam: 0, arm: 0, cruise: 0 };
+  myMissiles.forEach(m => { missileCounts[m.kind]++; });
+
+  const moveSuggestion = (board && myPrompt?.kind === 'move')
+    ? recommendPlaneIdx(board, state, mySeat, myPrompt.planes, myPrompt.roll)
+    : null;
+  const takeoffSuggestion = (board && myPrompt?.kind === 'takeoff')
+    ? recommendPlaneIdx(board, state, mySeat, myPrompt.planes, null)
+    : null;
+
+  // Dice animation: wild spin (rotation + face flicker) on every roll,
+  // ending with a settle/pop. Triggers for ALL players when state.lastDice
+  // changes (so spectators also see the animation), and immediately on
+  // local Roll-Dice click for responsiveness.
+  const [rolling, setRolling] = useState(false);
+  const [spinFace, setSpinFace] = useState(1);
+  const [popKey, setPopKey] = useState(0);
+  const prevDiceRef = useRef<number | undefined>(state.lastDice);
+  const spinTimerRef = useRef<number | null>(null);
+  // Tail duration: how long the spin continues AFTER the server result arrives.
+  const SPIN_TAIL_MS = 800;
+
+  // Server result arrived → continue spinning briefly, then pop.
+  useEffect(() => {
+    if (state.lastDice !== prevDiceRef.current && state.lastDice !== undefined) {
+      prevDiceRef.current = state.lastDice;
+      setRolling(true);
+      if (spinTimerRef.current !== null) clearTimeout(spinTimerRef.current);
+      spinTimerRef.current = window.setTimeout(() => {
+        setRolling(false);
+        setPopKey(k => k + 1);
+        spinTimerRef.current = null;
+      }, SPIN_TAIL_MS);
+    }
+  }, [state.lastDice]);
+
+  // Fast face flicker while spinning.
+  useEffect(() => {
+    if (!rolling) return;
+    const id = setInterval(() => setSpinFace(Math.floor(Math.random() * 6) + 1), 50);
+    return () => clearInterval(id);
+  }, [rolling]);
+
+  const onRollClick = () => {
+    setRolling(true);
+    setSpinFace(Math.floor(Math.random() * 6) + 1);
+    if (spinTimerRef.current !== null) {
+      clearTimeout(spinTimerRef.current);
+      spinTimerRef.current = null;
+    }
+    rollDice();
+  };
+
+  // Cleanup on unmount.
+  useEffect(() => () => {
+    if (spinTimerRef.current !== null) clearTimeout(spinTimerRef.current);
+  }, []);
 
   return (
     <div className="action-panel">
-      <div className="dice">
+      <div className="action-header">
         <strong>{state.turn}'s turn</strong>
-        {state.lastDice !== undefined && <span className="last-dice">🎲 {state.lastDice}</span>}
+        <button className="ghost" onClick={() => { if (confirm('Leave the game?')) leaveRoom(); }}>Exit</button>
+      </div>
+      <div className="dice">
+        {rolling ? (
+          <span className="last-dice dice-rolling">🎲 {spinFace}</span>
+        ) : (
+          state.lastDice !== undefined && (
+            <span key={popKey} className="last-dice dice-pop">🎲 {state.lastDice}</span>
+          )
+        )}
         {state.diceChain > 0 && <span className="chain">×{state.diceChain}</span>}
       </div>
       <div className="phase">phase: {state.phase}</div>
       {isMyTurn && state.phase === 'awaitRoll' && (
-        <button className="primary big" onClick={rollDice}>Roll Dice</button>
+        <button className="primary big" onClick={onRollClick} disabled={rolling}>
+          {rolling ? 'Rolling…' : 'Roll Dice'}
+        </button>
       )}
       {myPrompt?.kind === 'move' && (
         <div className="prompt">
-          <p>Choose a plane to move ({myPrompt.roll} steps):</p>
+          <p>Choose a plane to move ({myPrompt.roll} steps):
+            {moveSuggestion !== null && (
+              <span className="suggest-hint"> — suggested: #{moveSuggestion.idx + 1} ({moveSuggestion.reason})</span>
+            )}
+          </p>
           <div className="plane-row">
             {myPrompt.planes.map(idx => (
-              <button key={idx} className={`plane-btn plane-${mySeat}`} onClick={() => choosePlane(idx)}>#{idx + 1}</button>
+              <button
+                key={idx}
+                className={`plane-btn plane-${mySeat} ${moveSuggestion?.idx === idx ? 'recommended' : ''}`}
+                onClick={() => choosePlane(idx)}
+                onMouseEnter={() => setHoverPlane(idx)}
+                onMouseLeave={() => setHoverPlane(null)}
+              >#{idx + 1}</button>
             ))}
           </div>
         </div>
       )}
       {myPrompt?.kind === 'takeoff' && (
         <div className="prompt">
-          <p>Take off:</p>
+          <p>Take off:
+            {takeoffSuggestion !== null && (
+              <span className="suggest-hint"> — suggested: #{takeoffSuggestion.idx + 1} ({takeoffSuggestion.reason})</span>
+            )}
+          </p>
           <div className="plane-row">
             {myPrompt.planes.map(idx => (
-              <button key={idx} className={`plane-btn plane-${mySeat}`} onClick={() => chooseTakeoff(idx)}>#{idx + 1}</button>
+              <button
+                key={idx}
+                className={`plane-btn plane-${mySeat} ${takeoffSuggestion?.idx === idx ? 'recommended' : ''}`}
+                onClick={() => chooseTakeoff(idx)}
+              >#{idx + 1}</button>
             ))}
           </div>
         </div>
       )}
 
       <div className="hand">
-        <h4>My missiles</h4>
-        {myMissiles.length === 0 && <em>none</em>}
-        {myMissiles.map(m => (
-          <div key={m.id} className="hand-card">
-            <span>{m.kind.toUpperCase()}</span>
-            {m.kind === 'arm' && (
-              <select onChange={e => {
-                const c = e.target.value as Color;
-                if (c && c !== mySeat) playCard(m.id, { targetColor: c });
-                e.target.value = '';
-              }} defaultValue="">
-                <option value="" disabled>Fire ARM at…</option>
-                {(['red','yellow','blue','green'] as Color[]).filter(c => c !== mySeat).map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            )}
-            {m.kind === 'cruise' && (
-              <CruiseLauncher cardId={m.id} mySeat={mySeat} />
-            )}
+        <h4>My arsenal</h4>
+        <div className="arsenal-summary">
+          <span className="arsenal-row">📡 Radars: <strong>{myRadars}</strong></span>
+          {MISSILE_KINDS.map(k => (
+            <span key={k} className="arsenal-row">🛩 {MISSILE_LABELS[k]}: <strong>{missileCounts[k]}</strong></span>
+          ))}
+        </div>
+        {myMissiles.length > 0 && (
+          <div className="hand-actions">
+            <h4>Missile actions</h4>
+            {myMissiles.map(m => (
+              <div key={m.id} className="hand-card">
+                <span>{m.kind.toUpperCase()}</span>
+                {m.kind === 'arm' && (
+                  <select onChange={e => {
+                    const c = e.target.value as Color;
+                    if (c && c !== mySeat) playCard(m.id, { targetColor: c });
+                    e.target.value = '';
+                  }} defaultValue="">
+                    <option value="" disabled>Fire ARM at…</option>
+                    {(['red','yellow','blue','green'] as Color[]).filter(c => c !== mySeat).map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                )}
+                {m.kind === 'cruise' && (
+                  <CruiseLauncher cardId={m.id} mySeat={mySeat} />
+                )}
+              </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
 
       <div className="hand">

@@ -1,0 +1,16 @@
+{
+  "name": "fkzz-feixingqi",
+  "private": true,
+  "version": "0.1.0",
+  "description": "防控作战飞行棋 online multiplayer",
+  "workspaces": ["shared", "server", "web"],
+  "scripts": {
+    "dev": "concurrently -n srv,web -c blue,green \"npm:dev -w server\" \"npm:dev -w web\"",
+    "build": "npm -w shared run build && npm -w server run build && npm -w web run build",
+    "start": "node server/dist/index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1",
+    "typescript": "^5.5.4"
+  }
+}

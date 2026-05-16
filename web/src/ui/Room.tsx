@@ -1,0 +1,95 @@
+import React from 'react';
+import { useStore } from '../state/store';
+import type { Color } from '@fkzz/shared';
+
+const COLOR_LABELS: Record<Color, string> = {
+  red: '红 Red', yellow: '黄 Yellow', blue: '蓝 Blue', green: '绿 Green',
+};
+
+type Difficulty = 'easy' | 'medium' | 'hard';
+const DIFFICULTY_PRESETS: Record<Difficulty, number[]> = {
+  easy: [2, 4, 6],
+  medium: [5, 6],
+  hard: [6],
+};
+const DIFFICULTY_LABELS: Record<Difficulty, string> = {
+  easy: 'Easy (takeoff on 2 / 4 / 6)',
+  medium: 'Medium (takeoff on 5 / 6)',
+  hard: 'Hard (takeoff on 6 only)',
+};
+function difficultyOfNumbers(nums: number[]): Difficulty {
+  const key = [...nums].sort().join(',');
+  if (key === '2,4,6') return 'easy';
+  if (key === '5,6') return 'medium';
+  return 'hard';
+}
+
+export default function Room() {
+  const { room, playerId, claimSeat, setReady, setOptions, startGame, leaveRoom } = useStore();
+  if (!room) return <div>Loading…</div>;
+
+  const me = room.seats.find(s => s.player?.id === playerId);
+  const isHost = room.hostId === playerId;
+  const seated = room.seats.filter(s => s.player);
+  const canStart = isHost && seated.length >= 2 && seated.every(s => s.ready || s.player?.id === room.hostId);
+  const currentDifficulty = difficultyOfNumbers(room.options.takeoffNumbers);
+
+  const onDifficultyChange = (d: Difficulty) => {
+    setOptions({ ...room.options, takeoffNumbers: DIFFICULTY_PRESETS[d] });
+  };
+
+  return (
+    <div className="room">
+      <header>
+        <h2>Room <span className="code">{room.id}</span></h2>
+        <button className="ghost" onClick={leaveRoom}>Leave</button>
+      </header>
+
+      <div className="seats">
+        {room.seats.map(s => (
+          <button
+            key={s.color}
+            className={`seat seat-${s.color} ${s.player ? 'taken' : ''} ${me?.color === s.color ? 'mine' : ''}`}
+            onClick={() => claimSeat(s.color)}
+          >
+            <div className="seat-color">{COLOR_LABELS[s.color]}</div>
+            <div className="seat-player">
+              {s.player ? `${s.player.nickname}${s.ready ? ' ✓' : ''}${!s.player.connected ? ' (offline)' : ''}` : '— empty —'}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="options">
+        <h3>Options{isHost ? '' : ' (host only)'}</h3>
+        <label>
+          Takeoff Difficulty
+          {isHost ? (
+            <select value={currentDifficulty} onChange={e => onDifficultyChange(e.target.value as Difficulty)}>
+              {(Object.keys(DIFFICULTY_PRESETS) as Difficulty[]).map(d => (
+                <option key={d} value={d}>{DIFFICULTY_LABELS[d]}</option>
+              ))}
+            </select>
+          ) : (
+            <span>{DIFFICULTY_LABELS[currentDifficulty]}</span>
+          )}
+        </label>
+        <div>Turn timeout: {Math.round(room.options.turnTimeoutMs / 1000)}s</div>
+        <div>Victory: {room.options.victory}</div>
+      </div>
+
+      <div className="actions">
+        {me && (
+          <button onClick={() => setReady(!me.ready)}>
+            {me.ready ? 'Unready' : 'Ready'}
+          </button>
+        )}
+        {isHost && (
+          <button className="primary" disabled={!canStart} onClick={startGame}>
+            Start Game
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

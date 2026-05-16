@@ -15,27 +15,20 @@ import type { QuestionRow } from '@fkzz/shared';
 
 export function bindHandlers(io: Server, registry: RoomRegistry, getQuestions: () => QuestionRow[]) {
   io.on('connection', (socket: Socket) => {
-    socket.emit(S2C.Welcome, { playerId: '' }); // filled after first lobby action
+    socket.emit(S2C.Welcome, { playerId: '' });
 
     socket.on(C2S.SessionResume, (raw: unknown) => {
       const parsed = SessionResumeZ.safeParse(raw);
       if (!parsed.success) return sendErr(socket, 'BAD_PAYLOAD', parsed.error.message);
       const player = registry.resumeSession(parsed.data.playerId, socket.id, parsed.data.nickname);
       if (!player) {
-        // Unknown player id (server restarted, or expired). Tell client so it
-        // can clear its stored id and fall back to the lobby flow.
         socket.emit(S2C.Welcome, { playerId: '' });
         return sendErr(socket, 'NO_SESSION', 'session expired, please rejoin');
       }
       socket.emit(S2C.Welcome, { playerId: player.id });
       const room = registry.roomOfPlayer(player.id);
-      if (!room) {
-        socket.emit(S2C.RoomState, { room: null });
-        return;
-      }
+      if (!room) { socket.emit(S2C.RoomState, { room: null }); return; }
       socket.join(room.id);
-      // Re-broadcast room (so others see this player as connected again),
-      // and push a snapshot directly to this socket so the UI hydrates.
       broadcastRoom(io, registry, room.id);
       if (room.engine) {
         socket.emit(S2C.Board, { board: room.engine.boardSnapshot() });
@@ -108,14 +101,27 @@ export function bindHandlers(io: Server, registry: RoomRegistry, getQuestions: (
       const cb = makeCallbacks(io, registry, room.id);
       const ok = registry.startGame(room.id, player.id, getQuestions(), cb);
       if (!ok) return sendErr(socket, 'CANT_START', 'need 2+ players, all ready');
-      // Push board snapshot once.
       const board: BoardSnapshot = room.engine!.boardSnapshot();
       io.to(room.id).emit(S2C.Board, { board });
       broadcastRoom(io, registry, room.id);
       cb.onState(room.engine!.state);
     });
 
-    socket.on(C2S.TurnRoll, (raw: unknown) => withGame(registry, socket, (room, _) => {
+    socket.on(C2S.RoomRestart, () => {
+      const player = registry.playerBySocket(socket.id);
+      if (!player) return;
+      const room = registry.roomOfPlayer(player.id);
+      if (!room) return;
+      const cb = makeCallbacks(io, registry, room.id);
+      const ok = registry.restartGame(room.id, player.id, getQuestions(), cb);
+      if (!ok) return sendErr(socket, 'CANT_RESTART', 'game not over or not seated');
+      const board: BoardSnapshot = room.engine!.boardSnapshot();
+      io.to(room.id).emit(S2C.Board, { board });
+      broadcastRoom(io, registry, room.id);
+      cb.onState(room.engine!.state);
+    });
+
+    socket.on(C2S.TurnRoll, (raw: unknown) => withGame(registry, socket, (room) => {
       const player = registry.playerBySocket(socket.id)!;
       const seat = seatOfPlayer(room, player.id);
       if (!seat) return;
@@ -192,7 +198,6 @@ export function bindHandlers(io: Server, registry: RoomRegistry, getQuestions: (
 
     socket.on('disconnect', () => {
       registry.detachSocket(socket.id);
-      // Keep player record so they can reconnect; broadcast room state for connection indicator.
       const player = registry.playerBySocket(socket.id);
       if (player) {
         const room = registry.roomOfPlayer(player.id);
@@ -230,7 +235,6 @@ function makeCallbacks(io: Server, registry: RoomRegistry, roomId: string): Engi
     onEvent(ev) {
       if (ev.kind === 'dice') io.to(roomId).emit(S2C.EventDice, ev);
       else if (ev.kind === 'cardDrawn') {
-        // Only deliver concrete card details to the seat that drew it.
         const room = registry.getRoom(roomId);
         if (!room) return;
         const seat = room.seats.find(s => s.color === ev.seat);
@@ -239,7 +243,6 @@ function makeCallbacks(io: Server, registry: RoomRegistry, roomId: string): Engi
             seat: ev.seat, cardType: ev.card.type, cardKind: (ev.card as any).kind,
           });
         }
-        // Everyone gets a generic notice
         io.to(roomId).emit(S2C.EventLog, { line: `${ev.seat} drew a card` });
       } else if (ev.kind === 'log') {
         io.to(roomId).emit(S2C.EventLog, { line: ev.line });

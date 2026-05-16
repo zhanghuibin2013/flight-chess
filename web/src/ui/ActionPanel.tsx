@@ -128,24 +128,35 @@ export default function ActionPanel() {
   const [rolling, setRolling] = useState(false);
   const [spinFace, setSpinFace] = useState(1);
   const [popKey, setPopKey] = useState(0);
-  const prevDiceRef = useRef<number | undefined>(state.lastDice);
   const spinTimerRef = useRef<number | null>(null);
   // Tail duration: how long the spin continues AFTER the server result arrives.
   const SPIN_TAIL_MS = 800;
+  // Hard cap: stop spinning no matter what, so a stuck spin can never persist.
+  const SPIN_HARD_CAP_MS = 1800;
 
-  // Server result arrived → continue spinning briefly, then pop.
+  const scheduleStop = (delay: number) => {
+    if (spinTimerRef.current !== null) clearTimeout(spinTimerRef.current);
+    spinTimerRef.current = window.setTimeout(() => {
+      spinTimerRef.current = null;
+      setRolling(false);
+      setPopKey(k => k + 1);
+    }, delay);
+  };
+
+  // Detect "a roll happened" by watching (turn, lastDice, diceChain) together.
+  // Watching lastDice alone fails when the same value is rolled twice in a row
+  // (e.g. when no plane can move and the engine immediately passes the turn).
+  const prevSigRef = useRef<string>(`${state.turn}|${state.lastDice}|${state.diceChain}`);
   useEffect(() => {
-    if (state.lastDice !== prevDiceRef.current && state.lastDice !== undefined) {
-      prevDiceRef.current = state.lastDice;
-      setRolling(true);
-      if (spinTimerRef.current !== null) clearTimeout(spinTimerRef.current);
-      spinTimerRef.current = window.setTimeout(() => {
-        setRolling(false);
-        setPopKey(k => k + 1);
-        spinTimerRef.current = null;
-      }, SPIN_TAIL_MS);
+    const sig = `${state.turn}|${state.lastDice}|${state.diceChain}`;
+    if (sig !== prevSigRef.current) {
+      prevSigRef.current = sig;
+      if (state.lastDice !== undefined) {
+        setRolling(true);
+        scheduleStop(SPIN_TAIL_MS);
+      }
     }
-  }, [state.lastDice]);
+  }, [state.turn, state.lastDice, state.diceChain]);
 
   // Fast face flicker while spinning.
   useEffect(() => {
@@ -157,10 +168,10 @@ export default function ActionPanel() {
   const onRollClick = () => {
     setRolling(true);
     setSpinFace(Math.floor(Math.random() * 6) + 1);
-    if (spinTimerRef.current !== null) {
-      clearTimeout(spinTimerRef.current);
-      spinTimerRef.current = null;
-    }
+    // Safety net: even if the server response produces no detectable state
+    // delta (e.g. same dice value AND same chain AND same turn), the spin
+    // will still terminate via the hard cap.
+    scheduleStop(SPIN_HARD_CAP_MS);
     rollDice();
   };
 

@@ -887,6 +887,12 @@ export class GameEngine {
         const home = this.state.planes[c].filter(p => p.state === 'home').length;
         if (home >= 2) wins.push(c);
       }
+    } else if (this.state.options.victory === 'allHome') {
+      // All 4 planes must reach home for a player to win the round.
+      for (const c of this.playerSeats) {
+        const planes = this.state.planes[c];
+        if (planes.length > 0 && planes.every(p => p.state === 'home')) wins.push(c);
+      }
     } else {
       // Timed victory: check time elapsed.
       const elapsed = Date.now() - this.state.startedAt;

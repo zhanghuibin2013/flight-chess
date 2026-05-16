@@ -24,6 +24,13 @@ function difficultyOfNumbers(nums: number[]): Difficulty {
   return 'hard';
 }
 
+type VictoryMode = 'twoHome' | 'allHome' | 'timed';
+const VICTORY_LABELS: Record<VictoryMode, string> = {
+  twoHome: 'First to land 2 planes home',
+  allHome: 'First to land ALL 4 planes home',
+  timed:   'Timed — most planes home when time is up',
+};
+
 export default function Room() {
   const { room, playerId, claimSeat, setReady, setOptions, startGame, leaveRoom } = useStore();
   if (!room) return <div>Loading…</div>;
@@ -36,6 +43,9 @@ export default function Room() {
 
   const onDifficultyChange = (d: Difficulty) => {
     setOptions({ ...room.options, takeoffNumbers: DIFFICULTY_PRESETS[d] });
+  };
+  const onVictoryChange = (v: VictoryMode) => {
+    setOptions({ ...room.options, victory: v });
   };
 
   return (
@@ -79,8 +89,20 @@ export default function Room() {
           <span className="option-value">{Math.round(room.options.turnTimeoutMs / 1000)}s</span>
         </div>
         <div className="option-row">
-          <label className="option-label">Victory</label>
-          <span className="option-value">{room.options.victory}</span>
+          <label className="option-label">Victory condition</label>
+          {isHost ? (
+            <select
+              className="option-input"
+              value={room.options.victory}
+              onChange={e => onVictoryChange(e.target.value as VictoryMode)}
+            >
+              {(Object.keys(VICTORY_LABELS) as VictoryMode[]).map(v => (
+                <option key={v} value={v}>{VICTORY_LABELS[v]}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="option-value">{VICTORY_LABELS[room.options.victory as VictoryMode]}</span>
+          )}
         </div>
       </div>
 

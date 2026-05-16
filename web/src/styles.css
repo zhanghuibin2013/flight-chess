@@ -101,12 +101,11 @@ h1,h2,h3,h4{font-weight:700}
 .dice-rolling{animation:diceWildSpin .35s linear infinite;color:#1565c0;font-size:26px;text-shadow:0 0 8px rgba(21,101,192,.35)}
 .dice-pop{animation:dicePop .55s cubic-bezier(.34,1.56,.64,1) both;color:#2e7d32}
 @keyframes diceWildSpin{
-  0%   {transform:rotate(0deg)   scale(1.0) translateY(0)}
-  20%  {transform:rotate(180deg) scale(1.15) translateY(-6px)}
-  40%  {transform:rotate(360deg) scale(0.95) translateY(2px)}
-  60%  {transform:rotate(540deg) scale(1.15) translateY(-6px)}
-  80%  {transform:rotate(720deg) scale(0.95) translateY(2px)}
-  100% {transform:rotate(900deg) scale(1.0) translateY(0)}
+  0%   {transform:rotate(0deg)   scale(1.0)}
+  25%  {transform:rotate(225deg) scale(1.05)}
+  50%  {transform:rotate(450deg) scale(0.98)}
+  75%  {transform:rotate(675deg) scale(1.05)}
+  100% {transform:rotate(900deg) scale(1.0)}
 }
 @keyframes dicePop{
   0%   {transform:scale(.4) rotate(-30deg);opacity:.3}
@@ -148,3 +147,30 @@ h1,h2,h3,h4{font-weight:700}
 .qa-options label:hover{background:#f5f5f5}
 .qa-options label.selected{border-color:var(--blue);background:#e3f2fd}
 .qa-options input[type=radio]{accent-color:var(--blue)}
+
+/* ===== Game Over Overlay ===== */
+.gameover-overlay{position:fixed;inset:0;background:rgba(10,15,30,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:1000;animation:goFadeIn .35s ease both}
+.gameover-card{position:relative;min-width:340px;max-width:90vw;padding:32px 28px 24px;background:#fff;border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.35);text-align:center;overflow:hidden;animation:goCardIn .55s cubic-bezier(.34,1.56,.64,1) both}
+.gameover-card.win{border-top:6px solid #ffb300;background:linear-gradient(180deg,#fff8e1 0%,#fff 50%)}
+.gameover-card.lose{border-top:6px solid #757575;background:linear-gradient(180deg,#eceff1 0%,#fff 50%)}
+.go-emoji{font-size:72px;line-height:1;margin-bottom:8px;display:inline-block;transform-origin:50% 50%}
+.go-emoji-win{animation:goTrophy 1.6s ease-in-out infinite;filter:drop-shadow(0 4px 16px rgba(255,179,0,.6))}
+.go-emoji-lose{animation:goShake .9s ease-in-out infinite;filter:grayscale(.6) drop-shadow(0 4px 10px rgba(0,0,0,.25))}
+.go-title{font-size:36px;font-weight:800;margin:4px 0 8px;letter-spacing:1px}
+.go-title-win{color:#ef6c00;text-shadow:0 2px 0 #ffd54f,0 6px 20px rgba(255,140,0,.4);animation:goPopText .8s cubic-bezier(.34,1.56,.64,1) both}
+.go-title-lose{color:#455a64;animation:goFallText .9s cubic-bezier(.5,0,.5,1) both}
+.go-subtitle{font-size:14px;color:#455a64;margin-bottom:20px}
+.go-actions{display:flex;gap:12px;justify-content:center;margin-top:8px}
+.go-actions .big{font-size:15px;padding:10px 20px;border-radius:8px}
+.go-actions .ghost{color:#455a64;text-decoration:none;border:1px solid #b0bec5;background:#fff;cursor:pointer}
+.go-actions .ghost:hover{background:#eceff1}
+.go-confetti{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.confetti{position:absolute;top:-12px;width:8px;height:14px;border-radius:2px;animation:goConfetti 2.4s linear infinite;opacity:.9}
+.confetti.c0{background:#ef5350}.confetti.c1{background:#fdd835}.confetti.c2{background:#42a5f5}.confetti.c3{background:#66bb6a}.confetti.c4{background:#ab47bc}.confetti.c5{background:#ffa726}
+@keyframes goFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes goCardIn{0%{transform:translateY(40px) scale(.85);opacity:0}60%{transform:translateY(-6px) scale(1.03);opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}
+@keyframes goTrophy{0%,100%{transform:rotate(-6deg) scale(1)}50%{transform:rotate(6deg) scale(1.08)}}
+@keyframes goShake{0%,100%{transform:translateX(0) rotate(0)}25%{transform:translateX(-6px) rotate(-4deg)}50%{transform:translateX(0) rotate(0)}75%{transform:translateX(6px) rotate(4deg)}}
+@keyframes goPopText{0%{transform:scale(.3) rotate(-12deg);opacity:0}60%{transform:scale(1.25) rotate(4deg);opacity:1}100%{transform:scale(1) rotate(0);opacity:1}}
+@keyframes goFallText{0%{transform:translateY(-30px) scale(.9);opacity:0}60%{transform:translateY(6px) scale(1);opacity:1}100%{transform:translateY(0) scale(1);opacity:1}}
+@keyframes goConfetti{0%{transform:translateY(-20px) rotate(0)}100%{transform:translateY(420px) rotate(720deg)}}

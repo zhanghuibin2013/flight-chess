@@ -6,6 +6,7 @@ import LogPanel from './LogPanel';
 import ActionPanel from './ActionPanel';
 import CombatModal from './CombatModal';
 import QAPrompt from './QAPrompt';
+import GameOverOverlay from './GameOverOverlay';
 
 export default function Game() {
   const state = useStore(s => s.state);
@@ -28,6 +29,7 @@ export default function Game() {
       </aside>
       {myPrompt?.kind === 'combat' && <CombatModal prompt={myPrompt} />}
       {myPrompt?.kind === 'qa' && <QAPrompt prompt={myPrompt} />}
+      <GameOverOverlay />
     </div>
   );
 }

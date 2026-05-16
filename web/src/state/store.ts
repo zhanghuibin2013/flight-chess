@@ -13,34 +13,20 @@ export type Screen = 'lobby' | 'room' | 'game';
 interface ChatLine { from: string; nickname: string; message: string; ts: number; }
 
 interface Store {
-  // identity
   playerId: string;
   nickname: string;
-
-  // navigation
   screen: Screen;
-
-  // lobby/room
   room: RoomPublic | null;
-
-  // game
   board: BoardSnapshot | null;
   state: GameState | null;
   log: string[];
   chat: ChatLine[];
-
-  // transient hand info (cards drawn for ME)
   myCardEvents: { cardType: string; cardKind?: string; ts: number }[];
-
-  // last error
   lastError: string | null;
 
-  // transient UI: which own-plane the user is hovering in the action panel
-  // (used to render a hover-preview move-curve on the board).
   hoverPlaneIdx: number | null;
   setHoverPlane(idx: number | null): void;
 
-  // actions
   setNickname(n: string): void;
   createRoom(nickname: string): void;
   joinRoom(roomId: string, nickname: string): void;
@@ -49,6 +35,8 @@ interface Store {
   setReady(ready: boolean): void;
   setOptions(options: GameOptions): void;
   startGame(): void;
+  /** Server-side restart after gameOver — keeps seats & options. */
+  restartGame(): void;
   rollDice(): void;
   chooseTakeoff(planeIndex: number): void;
   choosePlane(planeIndex: number): void;
@@ -57,7 +45,6 @@ interface Store {
   playCard(cardId: string, opts?: { targetColor?: Color; targetPlaneIndex?: number; targetRadarIndex?: number }): void;
   chatSay(message: string): void;
 
-  /** Local seat color of the current viewer, derived from room.seats. */
   mySeat(): Color | null;
   isMyTurn(): boolean;
   myPrompt(): Prompt | null;
@@ -71,8 +58,6 @@ export const useStore = create<Store>((set, get) => {
       set({ playerId });
       setStoredPlayerId(playerId);
     } else {
-      // Server told us our stored session is gone. Clear it so the next
-      // connect doesn't loop on session:resume.
       setStoredPlayerId(null);
       set({ playerId: '' });
     }
@@ -86,7 +71,6 @@ export const useStore = create<Store>((set, get) => {
   sock.on(S2C.GameState, ({ state }) => {
     set({ state });
     if (state) {
-      // sync screen
       if (get().screen !== 'game') set({ screen: 'game' });
     }
   });
@@ -118,51 +102,25 @@ export const useStore = create<Store>((set, get) => {
       localStorage.setItem('fkzz.nickname', n);
       set({ nickname: n });
     },
-    createRoom(nickname) {
-      sock.emit(C2S.LobbyCreate, { nickname });
-    },
-    joinRoom(roomId, nickname) {
-      sock.emit(C2S.LobbyJoin, { roomId: roomId.toUpperCase(), nickname });
-    },
+    createRoom(nickname) { sock.emit(C2S.LobbyCreate, { nickname }); },
+    joinRoom(roomId, nickname) { sock.emit(C2S.LobbyJoin, { roomId: roomId.toUpperCase(), nickname }); },
     leaveRoom() {
       sock.emit(C2S.RoomLeave);
-      // Clear local session so we don't auto-resume into the room we just left.
       setStoredPlayerId(null);
       set({ room: null, board: null, state: null, screen: 'lobby', playerId: '' });
     },
-    claimSeat(color) {
-      sock.emit(C2S.RoomClaimSeat, { color });
-    },
-    setReady(ready) {
-      sock.emit(C2S.RoomReady, { ready });
-    },
-    setOptions(options) {
-      sock.emit(C2S.RoomSetOpts, options);
-    },
-    startGame() {
-      sock.emit(C2S.RoomStart);
-    },
-    rollDice() {
-      sock.emit(C2S.TurnRoll, {});
-    },
-    chooseTakeoff(planeIndex) {
-      sock.emit(C2S.TurnTakeoff, { planeIndex });
-    },
-    choosePlane(planeIndex) {
-      sock.emit(C2S.TurnMove, { planeIndex });
-    },
-    combatRespond(combatId, choice, data) {
-      sock.emit(C2S.CombatRespond, { combatId, choice, data });
-    },
-    qaAnswer(questionId, answerIndex) {
-      sock.emit(C2S.QAAnswer, { questionId, answerIndex });
-    },
-    playCard(cardId, opts) {
-      sock.emit(C2S.CardPlay, { cardId, ...opts });
-    },
-    chatSay(message) {
-      sock.emit(C2S.ChatSay, { message });
-    },
+    claimSeat(color) { sock.emit(C2S.RoomClaimSeat, { color }); },
+    setReady(ready) { sock.emit(C2S.RoomReady, { ready }); },
+    setOptions(options) { sock.emit(C2S.RoomSetOpts, options); },
+    startGame() { sock.emit(C2S.RoomStart); },
+    restartGame() { sock.emit(C2S.RoomRestart); },
+    rollDice() { sock.emit(C2S.TurnRoll, {}); },
+    chooseTakeoff(planeIndex) { sock.emit(C2S.TurnTakeoff, { planeIndex }); },
+    choosePlane(planeIndex) { sock.emit(C2S.TurnMove, { planeIndex }); },
+    combatRespond(combatId, choice, data) { sock.emit(C2S.CombatRespond, { combatId, choice, data }); },
+    qaAnswer(questionId, answerIndex) { sock.emit(C2S.QAAnswer, { questionId, answerIndex }); },
+    playCard(cardId, opts) { sock.emit(C2S.CardPlay, { cardId, ...opts }); },
+    chatSay(message) { sock.emit(C2S.ChatSay, { message }); },
 
     mySeat() {
       const room = get().room;

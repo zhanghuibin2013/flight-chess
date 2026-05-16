@@ -172,6 +172,30 @@ export class RoomRegistry {
     return true;
   }
 
+  /**
+   * Restart a finished game with the same seats and options.
+   * Any seated player may trigger this once the previous game is over.
+   * Resets ready state so the lobby flow stays consistent.
+   */
+  restartGame(roomId: string, requesterId: string, questions: QuestionRow[], cb: EngineCallbacks): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    // Requester must be seated in this room.
+    const requesterSeat = room.seats.find(s => s.player?.id === requesterId);
+    if (!requesterSeat) return false;
+    // Only allow restart when the prior game has actually ended.
+    if (!room.engine || room.engine.state.phase !== 'gameOver') return false;
+    const seated = room.seats.filter(s => s.player);
+    if (seated.length < 2) return false;
+    const seats = seated.map(s => s.color);
+    room.engine = new GameEngine(room.options, seats, questions, cb);
+    // Auto-ready everyone since they explicitly chose to play again.
+    for (const s of room.seats) {
+      if (s.player) s.ready = true;
+    }
+    return true;
+  }
+
   leaveRoom(playerId: string) {
     const rid = this.playerToRoom.get(playerId);
     if (!rid) return;

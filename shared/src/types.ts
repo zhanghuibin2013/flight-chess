@@ -119,7 +119,7 @@ export interface PlayerHand {
 export interface GameOptions {
   takeoffNumbers: number[];   // e.g. [2,4,6] | [5,6] | [6]
   turnTimeoutMs: number;      // default 60000
-  victory: 'twoHome' | 'timed';
+  victory: 'twoHome' | 'allHome' | 'timed';
   timeLimitMs?: number;       // for 'timed' victory
   fillBots: boolean;
 }

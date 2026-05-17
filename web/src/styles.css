@@ -167,6 +167,11 @@ h1,h2,h3,h4{font-weight:700}
 .plane-btn.recommended{box-shadow:0 0 0 3px #ffeb3b,0 0 12px 2px rgba(255,193,7,.55);animation:pulseRec 1.2s ease-in-out infinite}
 @keyframes pulseRec{0%,100%{box-shadow:0 0 0 3px #ffeb3b,0 0 8px 1px rgba(255,193,7,.4)}50%{box-shadow:0 0 0 3px #ffeb3b,0 0 16px 4px rgba(255,193,7,.7)}}
 .suggest-hint{font-size:12px;color:#f57f17;font-weight:700;margin-left:4px}
+.suggest-controls{display:flex;align-items:center;gap:10px;margin:4px 0 6px;flex-wrap:wrap}
+.suggest-btn{font-size:12px;padding:2px 8px;color:#f57f17;text-decoration:none;border:1px solid #f5b041;border-radius:4px;background:#fff8e1;cursor:pointer}
+.suggest-btn:hover{background:#ffecb3}
+.suggest-auto{flex-direction:row;align-items:center;gap:4px;font-size:12px;font-weight:500;color:var(--muted);cursor:pointer}
+.suggest-auto input{width:auto;margin:0}
 .hand{margin-top:8px}
 .hand h4{font-size:13px;margin-bottom:4px}
 .hand-card{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px}

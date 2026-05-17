@@ -39,7 +39,7 @@ const VICTORY_KEYS: Record<VictoryMode, string> = {
 export default function Room() {
   const { room, playerId, claimSeat, setReady, setOptions, startGame, leaveRoom } = useStore();
   const t = useT();
-  if (!room) return <div>Loading…</div>;
+  if (!room) return <div>{t('room.loading')}</div>;
 
   const me = room.seats.find(s => s.player?.id === playerId);
   const isHost = room.hostId === playerId;
@@ -53,6 +53,21 @@ export default function Room() {
   const onVictoryChange = (v: VictoryMode) => {
     setOptions({ ...room.options, victory: v });
   };
+  const onCollisionAllEnemiesChange = (v: boolean) => {
+    setOptions({ ...room.options, collisionAllEnemies: v });
+  };
+  const onEnableAamDuelChange = (v: boolean) => {
+    setOptions({ ...room.options, enableAamDuel: v });
+  };
+  const onEnablePerchChange = (v: boolean) => {
+    setOptions({ ...room.options, enablePerch: v });
+  };
+
+  // Backward-compat: rooms created before this option was added may have
+  // these fields undefined; treat undefined as the strict default.
+  const collisionAllEnemies = room.options.collisionAllEnemies ?? true;
+  const enableAamDuel = room.options.enableAamDuel ?? false;
+  const enablePerch = room.options.enablePerch ?? false;
 
   return (
     <div className="room">
@@ -70,7 +85,7 @@ export default function Room() {
           >
             <div className="seat-color">{t(COLOR_SHORT_KEYS[s.color])} {t(COLOR_KEYS[s.color])}</div>
             <div className="seat-player">
-              {s.player ? `${s.player.nickname}${s.ready ? ' ✓' : ''}${!s.player.connected ? ' (offline)' : ''}` : t('common.empty')}
+              {s.player ? `${s.player.nickname}${s.ready ? ' ✓' : ''}${!s.player.connected ? ' ' + t('room.offline') : ''}` : t('common.empty')}
             </div>
           </button>
         ))}
@@ -108,6 +123,45 @@ export default function Room() {
             </select>
           ) : (
             <span className="option-value">{t(VICTORY_KEYS[room.options.victory as VictoryMode])}</span>
+          )}
+        </div>
+        <div className="option-row">
+          <label className="option-label" title={t('room.collisionAllEnemiesHint')}>{t('room.collisionAllEnemies')}</label>
+          {isHost ? (
+            <input
+              type="checkbox"
+              className="option-input"
+              checked={collisionAllEnemies}
+              onChange={e => onCollisionAllEnemiesChange(e.target.checked)}
+            />
+          ) : (
+            <span className="option-value">{t(collisionAllEnemies ? 'common.on' : 'common.off')}</span>
+          )}
+        </div>
+        <div className="option-row">
+          <label className="option-label" title={t('room.enableAamDuelHint')}>{t('room.enableAamDuel')}</label>
+          {isHost ? (
+            <input
+              type="checkbox"
+              className="option-input"
+              checked={enableAamDuel}
+              onChange={e => onEnableAamDuelChange(e.target.checked)}
+            />
+          ) : (
+            <span className="option-value">{t(enableAamDuel ? 'common.on' : 'common.off')}</span>
+          )}
+        </div>
+        <div className="option-row">
+          <label className="option-label" title={t('room.enablePerchHint')}>{t('room.enablePerch')}</label>
+          {isHost ? (
+            <input
+              type="checkbox"
+              className="option-input"
+              checked={enablePerch}
+              onChange={e => onEnablePerchChange(e.target.checked)}
+            />
+          ) : (
+            <span className="option-value">{t(enablePerch ? 'common.on' : 'common.off')}</span>
           )}
         </div>
       </div>

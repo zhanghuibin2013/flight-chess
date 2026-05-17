@@ -54,6 +54,11 @@ const DEFAULT_OPTIONS: GameOptions = {
   turnTimeoutMs: 60_000,
   victory: 'oneHome',
   fillBots: false,
+  // Strict collision is the default: every enemy on the cell returns to
+  // hangar, no AAM duel prompt, no perch on roll-6.
+  collisionAllEnemies: true,
+  enableAamDuel: false,
+  enablePerch: false,
 };
 
 export class RoomRegistry {
@@ -176,11 +181,21 @@ export class RoomRegistry {
     return true;
   }
 
-  setOptions(roomId: string, hostPlayerId: string, options: GameOptions): boolean {
+  setOptions(roomId: string, hostPlayerId: string, options: Partial<GameOptions> & Pick<GameOptions, 'takeoffNumbers' | 'turnTimeoutMs' | 'victory' | 'fillBots'>): boolean {
     const room = this.rooms.get(roomId);
     if (!room) return false;
     if (room.hostId !== hostPlayerId) return false;
-    room.options = options;
+    // Merge incoming options over the room's current options so optional
+    // newer fields (e.g. collision toggles) keep their previous value when
+    // an older client omits them. Final fallback is DEFAULT_OPTIONS.
+    room.options = {
+      ...DEFAULT_OPTIONS,
+      ...room.options,
+      ...options,
+      collisionAllEnemies: options.collisionAllEnemies ?? room.options.collisionAllEnemies ?? DEFAULT_OPTIONS.collisionAllEnemies,
+      enableAamDuel: options.enableAamDuel ?? room.options.enableAamDuel ?? DEFAULT_OPTIONS.enableAamDuel,
+      enablePerch: options.enablePerch ?? room.options.enablePerch ?? DEFAULT_OPTIONS.enablePerch,
+    };
     return true;
   }
 

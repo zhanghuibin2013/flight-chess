@@ -124,6 +124,20 @@ export interface GameOptions {
   victory: 'oneHome' | 'twoHome' | 'allHome' | 'timed';
   timeLimitMs?: number;       // for 'timed' victory
   fillBots: boolean;
+  /** Collision rules — when planes from different players land on the same cell.
+   *  Defaults reflect the simple "directly retreat to hangar" behavior. */
+  /** When true, all enemy planes on the collision cell return to hangar
+   *  (alongside the attacker). When false (legacy), only one enemy from a
+   *  stack returns. Default: true. */
+  collisionAllEnemies: boolean;
+  /** When true, attackers holding an AAM card are prompted for a duel before
+   *  collision is resolved. When false, collision is always immediate.
+   *  Default: false. */
+  enableAamDuel: boolean;
+  /** When true, a roll of 6 that lands on an enemy stack causes the moving
+   *  plane to perch on top instead of colliding. When false, every direct
+   *  landing on an enemy cell is a collision. Default: false. */
+  enablePerch: boolean;
 }
 
 export interface DiceRoll { value: number; chain: number; /** 1st, 2nd, 3rd consecutive 6 */ }
@@ -144,7 +158,20 @@ export type Prompt =
   | { kind: 'takeoff'; seat: Color; planes: number[] }
   | { kind: 'move'; seat: Color; planes: number[]; roll: number }
   | { kind: 'card'; seat: Color; cardId: CardId }
-  | { kind: 'combat'; seat: Color; combatId: string; description: string; options: string[] }
+  | {
+      kind: 'combat';
+      seat: Color;
+      combatId: string;
+      /** Human-readable description (English fallback). */
+      description: string;
+      /** Optional i18n key (e.g. 'combat.aamPrompt') for client-side translation. */
+      descriptionKey?: string;
+      /** Optional placeholder values for the i18n template. */
+      descriptionParams?: Record<string, string | number>;
+      /** Machine-readable choice ids (e.g. 'fire', 'skip'). The client maps these
+       *  to localized labels via i18n keys like 'combat.opt.<id>'. */
+      options: string[];
+    }
   | { kind: 'qa'; seat: Color; questionId: string; prompt: string; options: string[] };
 
 export interface DeckCounts {

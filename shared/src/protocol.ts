@@ -49,6 +49,11 @@ export const RoomSetOptsZ = z.object({
   victory: z.enum(['oneHome','twoHome','allHome','timed'] as const),
   timeLimitMs: z.number().int().optional(),
   fillBots: z.boolean(),
+  // Collision rule toggles. Optional for backward compatibility — server
+  // applies defaults (strict: all enemies return; no AAM duel; no perch).
+  collisionAllEnemies: z.boolean().optional(),
+  enableAamDuel: z.boolean().optional(),
+  enablePerch: z.boolean().optional(),
 });
 export const TurnRollZ = z.object({});
 export const TurnTakeoffZ = z.object({ planeIndex: z.number().int().min(0).max(3) });

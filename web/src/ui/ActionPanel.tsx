@@ -17,6 +17,12 @@ const COLOR_KEYS: Record<Color, string> = {
 const PATH_LEN_TO_HOME = 73;
 const LANDING_START_STEP = 68;
 
+const SUGGEST_AUTO_KEY = 'fkzz.suggestAuto';
+function loadAutoSuggest(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem(SUGGEST_AUTO_KEY) === '1';
+}
+
 /** Return cellId on `color`'s path at the given progress. */
 function cellIdAt(board: BoardSnapshot, color: Color, progress: number): number {
   const path = board.paths[color];
@@ -147,6 +153,23 @@ export default function ActionPanel() {
     ? recommendPlaneIdx(board, state, mySeat, myPrompt.planes, null)
     : null;
 
+  // Suggestion visibility: by default the player must click a "Hint" button
+  // to reveal the recommendation; an "Auto hint" checkbox restores the old
+  // always-on behaviour. The choice is persisted in localStorage. The reveal
+  // flag resets whenever the active prompt changes (new turn / new dice).
+  const [autoSuggest, setAutoSuggest] = useState<boolean>(() => loadAutoSuggest());
+  const [revealSuggest, setRevealSuggest] = useState(false);
+  const promptSig = myPrompt && (myPrompt.kind === 'move' || myPrompt.kind === 'takeoff')
+    ? `${myPrompt.kind}|${myPrompt.planes.join(',')}|${myPrompt.kind === 'move' ? myPrompt.roll : ''}`
+    : '';
+  useEffect(() => { setRevealSuggest(false); }, [promptSig]);
+  const toggleAutoSuggest = (next: boolean) => {
+    setAutoSuggest(next);
+    try { localStorage.setItem(SUGGEST_AUTO_KEY, next ? '1' : '0'); } catch {}
+    if (next) setRevealSuggest(true);
+  };
+  const showSuggest = autoSuggest || revealSuggest;
+
   // Dice animation: wild spin (rotation + face flicker) on every roll,
   // ending with a settle/pop. Triggers for ALL players when state.lastDice
   // changes (so spectators also see the animation), and immediately on
@@ -232,7 +255,7 @@ export default function ActionPanel() {
       {myPrompt?.kind === 'move' && (
         <div className="prompt">
           <p>{t('game.choosePlane', { n: myPrompt.roll })}
-            {moveSuggestion !== null && (
+            {moveSuggestion !== null && showSuggest && (
               <span className="suggest-hint">
                 {t('game.suggest', {
                   idx: moveSuggestion.idx + 1,
@@ -241,11 +264,24 @@ export default function ActionPanel() {
               </span>
             )}
           </p>
+          {moveSuggestion !== null && (
+            <div className="suggest-controls">
+              {!showSuggest && (
+                <button className="ghost suggest-btn" onClick={() => setRevealSuggest(true)}>
+                  💡 {t('game.suggestBtn')}
+                </button>
+              )}
+              <label className="suggest-auto">
+                <input type="checkbox" checked={autoSuggest} onChange={e => toggleAutoSuggest(e.target.checked)} />
+                <span>{t('game.autoSuggest')}</span>
+              </label>
+            </div>
+          )}
           <div className="plane-row">
             {myPrompt.planes.map(idx => (
               <button
                 key={idx}
-                className={`plane-btn plane-${mySeat} ${moveSuggestion?.idx === idx ? 'recommended' : ''}`}
+                className={`plane-btn plane-${mySeat} ${showSuggest && moveSuggestion?.idx === idx ? 'recommended' : ''}`}
                 onClick={() => choosePlane(idx)}
                 onMouseEnter={() => setHoverPlane(idx)}
                 onMouseLeave={() => setHoverPlane(null)}
@@ -257,7 +293,7 @@ export default function ActionPanel() {
       {myPrompt?.kind === 'takeoff' && (
         <div className="prompt">
           <p>{t('game.takeoff')}
-            {takeoffSuggestion !== null && (
+            {takeoffSuggestion !== null && showSuggest && (
               <span className="suggest-hint">
                 {t('game.suggest', {
                   idx: takeoffSuggestion.idx + 1,
@@ -266,11 +302,24 @@ export default function ActionPanel() {
               </span>
             )}
           </p>
+          {takeoffSuggestion !== null && (
+            <div className="suggest-controls">
+              {!showSuggest && (
+                <button className="ghost suggest-btn" onClick={() => setRevealSuggest(true)}>
+                  💡 {t('game.suggestBtn')}
+                </button>
+              )}
+              <label className="suggest-auto">
+                <input type="checkbox" checked={autoSuggest} onChange={e => toggleAutoSuggest(e.target.checked)} />
+                <span>{t('game.autoSuggest')}</span>
+              </label>
+            </div>
+          )}
           <div className="plane-row">
             {myPrompt.planes.map(idx => (
               <button
                 key={idx}
-                className={`plane-btn plane-${mySeat} ${takeoffSuggestion?.idx === idx ? 'recommended' : ''}`}
+                className={`plane-btn plane-${mySeat} ${showSuggest && takeoffSuggestion?.idx === idx ? 'recommended' : ''}`}
                 onClick={() => chooseTakeoff(idx)}
               >#{idx + 1}</button>
             ))}
@@ -320,7 +369,7 @@ export default function ActionPanel() {
         {myRewards.length === 0 && <em>{t('common.none')}</em>}
         {myRewards.map(r => (
           <div key={r.id} className="hand-card">
-            <span>{r.kind}</span>
+            <span>{t(`reward.${r.kind}`)}</span>
             {r.kind === 'enemySkip' && (
               <select onChange={e => {
                 const c = e.target.value as Color;

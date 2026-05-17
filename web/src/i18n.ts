@@ -29,6 +29,8 @@ const ZH: Dict = {
   'common.send':            '发送',
   'common.or':              '或',
   'common.none':            '无',
+  'common.on':              '开',
+  'common.off':             '关',
   'common.you':             '（你）',
   'common.turn':            '回合',
   'common.empty':           '— 空位 —',
@@ -82,9 +84,17 @@ const ZH: Dict = {
   'room.victory.twoHome':   '率先 2 架飞机回家',
   'room.victory.allHome':   '率先全部 4 架飞机回家',
   'room.victory.timed':     '限时赛 — 时间到时回家最多者胜',
+  'room.collisionAllEnemies':     '撞机时全部敌机回库',
+  'room.collisionAllEnemiesHint': '关闭后：若撞上对方机叠，仅其中一架回库（旧规则）',
+  'room.enableAamDuel':           '启用空空对决',
+  'room.enableAamDuelHint':       '开启后：进攻方持有空空导弹时，撞机前可选择对决；关闭后撞机直接退回停机坪',
+  'room.enablePerch':             '启用 6 点叠停规则',
+  'room.enablePerchHint':         '开启后：投出 6 点正好停在敌机叠上时，本机叠停在其上方；关闭后直接撞机',
   'room.ready':             '准备',
   'room.unready':           '取消准备',
   'room.start':             '开始游戏',
+  'room.loading':           '加载中…',
+  'room.offline':           '（离线）',
   'room.hostLeft':          '房主已离开，等待回来…',
   'room.hostLeftCountdown': '若 {s} 秒内房主未回到房间，房间将被解散。',
   'room.disbanded':         '房主在限定时间内未回来，房间已解散。',
@@ -108,6 +118,8 @@ const ZH: Dict = {
   'game.choosePlane':       '选择一架飞机移动（{n} 步）：',
   'game.takeoff':           '起飞：',
   'game.suggest':           ' — 推荐：#{idx}（{reason}）',
+  'game.suggestBtn':        '提示',
+  'game.autoSuggest':       '自动提示',
   'game.arsenal':           '我的装备',
   'game.radars':            '📡 雷达：',
   'game.missile.actions':   '导弹操作',
@@ -157,6 +169,7 @@ const ZH: Dict = {
   'log.perched':            '{color} 叠停在 {enemy} 的机叠之上',
   'log.collision':          '碰撞：{color} #{n} 撞上 {list} — 全部回库',
   'log.aamDuel':            '空空导弹对决：进攻方 {attacker} vs 防守方 {defender}',
+  'log.aamRoll':            '{color} 在空战中掷出 {n}',
   'log.returnHangar':       '{color} #{n} 返回机库',
   'log.counterAam':         '反击空空：防守方 {defender} vs 进攻方 {attacker}',
   'log.counterAttackerWins':'反击中进攻方再次取胜 — 双方留场，进攻方继续',
@@ -165,7 +178,7 @@ const ZH: Dict = {
   'log.samShielded':        '{color} 用护盾抵挡了地空导弹',
   'log.samHit':             '地空命中：{color} #{n} 返回机库',
   'log.heldFire':           '{color} 选择按兵不动',
-  'log.drewMissile':        '{color} 抽到 {kind} 导弹',
+  'log.drewMissile':        '{color} 获得一枚导弹',
   'log.gotRadar':           '{color} 获得雷达（共 {n}）',
   'log.libraryEmpty':       '题库未加载题目 — 无效果',
   'log.qaCorrect':          '{color} 答题正确 — 抽奖励卡',
@@ -190,6 +203,18 @@ const ZH: Dict = {
 
   // Combat / QA
   'combat.title':           '战斗',
+  'combat.aamPrompt':       '与 {defender} 发生碰撞，是否发射空空导弹？',
+  'combat.samPrompt':       '敌机 {attacker} 进入你的雷达区 — 是否发射地空导弹？',
+  'combat.counterAamPrompt':'反击空空：与 {attacker} 对决，选择应对方式。',
+  'combat.aam.attackerRoll':'空空对决 — {attacker}（进攻方）请掷骰。',
+  'combat.aam.defenderRoll':'空空对决 — 进攻方掷出 {attackerRoll}，{defender}（防守方）请掷骰。',
+  'combat.aam.counterDecision':'防御成功（{attackerRoll} vs {defenderRoll}）。是否消耗一发空空导弹反击 {attacker}？',
+  'combat.aam.counterDefenderRoll':'反击 — {defender}（防守方）请掷骰。',
+  'combat.aam.counterAttackerRoll':'反击 — 防守方掷出 {counterDefenderRoll}，{attacker}（进攻方）请掷骰。',
+  'combat.opt.fire':        '发射',
+  'combat.opt.skip':        '不打',
+  'combat.opt.roll':        '掷骰',
+  'combat.opt.counter':     '反击',
   'qa.title':               '答题挑战',
   'qa.submit':              '提交答案',
 
@@ -209,6 +234,32 @@ const ZH: Dict = {
   'missile.sam':            'SAM（地空）',
   'missile.arm':            'ARM（反辐射）',
   'missile.cruise':         '巡航导弹',
+
+  // Missile kinds — short labels used inside log lines (e.g. drewMissile {kind}).
+  'missile.kind.aam':       '空空',
+  'missile.kind.sam':       '地空',
+  'missile.kind.arm':       '反辐射',
+  'missile.kind.cruise':    '巡航',
+
+  // Reward card kinds — used in hand list and log lines.
+  'reward.rerollFwd':       '再掷+前进',
+  'reward.fwd2':            '前进 2',
+  'reward.fwd4':            '前进 4',
+  'reward.fwd6':            '前进 6',
+  'reward.gainMissile':     '获得导弹',
+  'reward.gainRadar':       '获得雷达',
+  'reward.enemySkip':       '让对手跳过',
+  'reward.shield':          '护盾',
+
+  // Punishment card kinds.
+  'punishment.rerollBwd':   '再掷+后退',
+  'punishment.bwd2':        '后退 2',
+  'punishment.bwd4':        '后退 4',
+  'punishment.bwd6':        '后退 6',
+  'punishment.toTakeoff':   '回到起飞位',
+  'punishment.selfSkip':    '跳过一回合',
+  'punishment.loseMissile': '损失导弹',
+  'punishment.loseRadar':   '损失雷达',
 };
 
 const EN: Dict = {
@@ -218,6 +269,8 @@ const EN: Dict = {
   'common.send':            'Send',
   'common.or':              'or',
   'common.none':            'none',
+  'common.on':              'On',
+  'common.off':             'Off',
   'common.you':             '(you)',
   'common.turn':            'turn',
   'common.empty':           '— empty —',
@@ -271,9 +324,17 @@ const EN: Dict = {
   'room.victory.twoHome':   'First to land 2 planes home',
   'room.victory.allHome':   'First to land ALL 4 planes home',
   'room.victory.timed':     'Timed — most planes home when time is up',
+  'room.collisionAllEnemies':     'Collision returns all enemies on cell',
+  'room.collisionAllEnemiesHint': 'Off: only one of an enemy stack returns (legacy rule).',
+  'room.enableAamDuel':           'Enable AAM duel on collision',
+  'room.enableAamDuelHint':       'On: attackers holding an AAM may declare a duel before collision. Off: collisions are always immediate retreat.',
+  'room.enablePerch':             'Enable perch on roll-6',
+  'room.enablePerchHint':         'On: a 6 that lands exactly on an enemy stack perches on top instead of colliding. Off: always collide.',
   'room.ready':             'Ready',
   'room.unready':           'Unready',
   'room.start':             'Start Game',
+  'room.loading':           'Loading…',
+  'room.offline':           '(offline)',
   'room.hostLeft':          'Host has left. Waiting for them to come back…',
   'room.hostLeftCountdown': 'Room will be disbanded in {s}s if the host does not return.',
   'room.disbanded':         'Host did not come back in time — the room has been disbanded.',
@@ -297,6 +358,8 @@ const EN: Dict = {
   'game.choosePlane':       'Choose a plane to move ({n} steps):',
   'game.takeoff':           'Take off:',
   'game.suggest':           ' — suggested: #{idx} ({reason})',
+  'game.suggestBtn':        'Hint',
+  'game.autoSuggest':       'Auto hint',
   'game.arsenal':           'My arsenal',
   'game.radars':            '📡 Radars:',
   'game.missile.actions':   'Missile actions',
@@ -346,6 +409,7 @@ const EN: Dict = {
   'log.perched':            "{color} perched on top of {enemy}'s stack",
   'log.collision':          'Collision: {color}#{n} vs {list} — all return to hangar',
   'log.aamDuel':            'AAM duel: attacker {attacker} vs defender {defender}',
+  'log.aamRoll':            '{color} rolled {n} in the AAM duel',
   'log.returnHangar':       '{color}#{n} returns to hangar',
   'log.counterAam':         'Counter AAM: defender {defender} vs attacker {attacker}',
   'log.counterAttackerWins':'Attacker re-wins after counter — both stay, attacker continues',
@@ -354,7 +418,7 @@ const EN: Dict = {
   'log.samShielded':        '{color} shielded SAM hit',
   'log.samHit':             'SAM hit: {color}#{n} returns to hangar',
   'log.heldFire':           '{color} held fire',
-  'log.drewMissile':        '{color} drew {kind} missile',
+  'log.drewMissile':        '{color} obtained a missile',
   'log.gotRadar':           '{color} got a radar (now {n})',
   'log.libraryEmpty':       'Library has no questions loaded — no effect',
   'log.qaCorrect':          '{color} answered correctly — drawing reward',
@@ -379,6 +443,18 @@ const EN: Dict = {
 
   // Combat / QA
   'combat.title':           'Combat',
+  'combat.aamPrompt':       'Collision with {defender} — fire AAM?',
+  'combat.samPrompt':       'Enemy {attacker} entered your radar zone — fire SAM?',
+  'combat.counterAamPrompt':'Counter AAM: facing {attacker} — choose your response.',
+  'combat.aam.attackerRoll':'AAM duel — attacker {attacker}, please roll.',
+  'combat.aam.defenderRoll':'AAM duel — attacker rolled {attackerRoll}; defender {defender}, please roll.',
+  'combat.aam.counterDecision':'Defense succeeded ({attackerRoll} vs {defenderRoll}). Spend an AAM to counter {attacker}?',
+  'combat.aam.counterDefenderRoll':'Counter — defender {defender}, please roll.',
+  'combat.aam.counterAttackerRoll':'Counter — defender rolled {counterDefenderRoll}; attacker {attacker}, please roll.',
+  'combat.opt.fire':        'Fire',
+  'combat.opt.skip':        'Hold',
+  'combat.opt.roll':        'Roll',
+  'combat.opt.counter':     'Counter',
   'qa.title':               'Q&A Challenge',
   'qa.submit':              'Submit Answer',
 
@@ -398,6 +474,32 @@ const EN: Dict = {
   'missile.sam':            'SAM (Surf-Air)',
   'missile.arm':            'ARM (Anti-Radar)',
   'missile.cruise':         'Cruise',
+
+  // Missile kinds — short labels used inside log lines.
+  'missile.kind.aam':       'AAM',
+  'missile.kind.sam':       'SAM',
+  'missile.kind.arm':       'ARM',
+  'missile.kind.cruise':    'Cruise',
+
+  // Reward card kinds.
+  'reward.rerollFwd':       'Reroll & Advance',
+  'reward.fwd2':            'Advance 2',
+  'reward.fwd4':            'Advance 4',
+  'reward.fwd6':            'Advance 6',
+  'reward.gainMissile':     'Gain Missile',
+  'reward.gainRadar':       'Gain Radar',
+  'reward.enemySkip':       'Force Enemy Skip',
+  'reward.shield':          'Shield',
+
+  // Punishment card kinds.
+  'punishment.rerollBwd':   'Reroll & Retreat',
+  'punishment.bwd2':        'Retreat 2',
+  'punishment.bwd4':        'Retreat 4',
+  'punishment.bwd6':        'Retreat 6',
+  'punishment.toTakeoff':   'Back to Takeoff',
+  'punishment.selfSkip':    'Skip a Round',
+  'punishment.loseMissile': 'Lose Missile',
+  'punishment.loseRadar':   'Lose Radar',
 };
 
 const DICTS: Record<Locale, Dict> = { zh: ZH, en: EN };
@@ -424,6 +526,14 @@ export function translate(locale: Locale, key: string, params?: Record<string, s
  * locale. Unrecognised lines (legacy / debug strings) pass through verbatim.
  */
 const COLOR_PARAM_FIELDS = ['color', 'enemy', 'attacker', 'defender', 'target'];
+/** Maps a log line's translation key to the i18n namespace its `kind` param
+ *  should be looked up in. Keeps server payload code-only and the user-visible
+ *  string fully localized. */
+const KIND_NAMESPACE_BY_KEY: Record<string, string> = {
+  'log.drewMissile':    'missile.kind',
+  'log.drewReward':     'reward',
+  'log.drewPunishment': 'punishment',
+};
 export function renderLogLine(locale: Locale, line: string): string {
   if (!line.startsWith('i18n:')) return line;
   try {
@@ -436,6 +546,13 @@ export function renderLogLine(locale: Locale, line: string): string {
         const localized = DICTS[locale][colorKey] ?? DICTS.en[colorKey];
         if (localized) params[f] = localized;
       }
+    }
+    // Localize the `kind` param for log lines that quote a card kind code.
+    const kindNs = KIND_NAMESPACE_BY_KEY[obj.k];
+    if (kindNs && typeof params.kind === 'string') {
+      const kindKey = `${kindNs}.${params.kind}`;
+      const localized = DICTS[locale][kindKey] ?? DICTS.en[kindKey];
+      if (localized) params.kind = localized;
     }
     return translate(locale, obj.k, params);
   } catch {

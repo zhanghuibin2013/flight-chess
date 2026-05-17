@@ -28,7 +28,7 @@ import {
   buildRewardDeck, Deck, isHeldPunishment, isHeldReward,
 } from './decks.js';
 import {
-  aamDuel, armRoll, cruiseLandingRoll, rollD6,
+  armRoll, cruiseLandingRoll, rollD6,
 } from './combat.js';
 import {
   cellIdAtProgress, isAtHome, isInLandingStrip, isOnTakeoff,
@@ -47,10 +47,37 @@ interface PendingCombatBase {
   attacker: Color;
   defender: Color;
 }
+/**
+ * AAM combat is a small state machine driven by `combat:respond` events. Each
+ * step has a designated `seat` to whom the prompt is addressed:
+ *   fireDecision          attacker  ['fire' | 'skip']
+ *   attackerRoll          attacker  ['roll']
+ *   defenderRoll          defender  ['roll']
+ *   counterDecision       defender  ['counter' | 'skip']  (only if defender wins primary AND has AAM)
+ *   counterDefenderRoll   defender  ['roll']
+ *   counterAttackerRoll   attacker  ['roll']
+ */
+type AamStep =
+  | 'fireDecision'
+  | 'attackerRoll'
+  | 'defenderRoll'
+  | 'counterDecision'
+  | 'counterDefenderRoll'
+  | 'counterAttackerRoll';
+
 type PendingCombat =
   | (PendingCombatBase & { kind: 'sam'; planeIndex: number; passedCellIds: number[] })
-  | (PendingCombatBase & { kind: 'aam'; attackerPlaneIndex: number; defenderPlaneIndices: number[]; collisionCellId: number })
-  | (PendingCombatBase & { kind: 'aamCounter'; attackerPlaneIndex: number; defenderPlaneIndex: number; collisionCellId: number; remainingCounters: number })
+  | (PendingCombatBase & {
+      kind: 'aam';
+      attackerPlaneIndex: number;
+      defenderPlaneIndices: number[];
+      collisionCellId: number;
+      step: AamStep;
+      attackerRoll?: number;
+      defenderRoll?: number;
+      counterDefenderRoll?: number;
+      counterAttackerRoll?: number;
+    })
   | (PendingCombatBase & { kind: 'arm'; targetRadarSpent: boolean })
   | (PendingCombatBase & { kind: 'cruise'; targetPlaneIndex: number; targetCellId: number; landingShot: boolean });
 
@@ -364,40 +391,42 @@ export class GameEngine {
     const enemies = others.filter(o => o.color !== seat);
     if (enemies.length === 0) return;
 
+    const opts = this.state.options;
     const roll = this.state.lastDice!;
-    // Special perch rule: A approaches B's stack from a 6-roll.
     const enemyByColor: Record<string, number[]> = {};
     for (const e of enemies) (enemyByColor[e.color] ||= []).push(e.index);
     const stackedEnemyColor = Object.keys(enemyByColor).find(c => (enemyByColor[c]!).length >= 2);
 
-    if (roll === 6 && stackedEnemyColor) {
+    // Optional perch rule: A approaches B's stack with a 6-roll.
+    if (opts.enablePerch && roll === 6 && stackedEnemyColor) {
       // Perch on top, advance next turn.
       plane.perched = true;
       this.logI18n('log.perched', { color: seat, enemy: stackedEnemyColor });
       return;
     }
 
-    // Otherwise: collision. The attacker offers AAM declaration if they have one.
-    // For each *single* enemy on cell, attacker collides with all of them; a stack
-    // forces "attacker + 1 of stack returns" rule.
-    if (stackedEnemyColor) {
-      // Attacker + one stack member return.
+    // Determine the set of defenders that return to hangar.
+    // - collisionAllEnemies=true (default): every enemy on the cell goes back.
+    // - collisionAllEnemies=false (legacy): if there's a stack, only one of
+    //   the stack returns; otherwise, all single enemies return.
+    let targets: { color: Color; index: number }[];
+    if (opts.collisionAllEnemies) {
+      targets = enemies.map(e => ({ color: e.color, index: e.index }));
+    } else if (stackedEnemyColor) {
       const targetIdx = enemyByColor[stackedEnemyColor]![0]!;
-      // Offer AAM if attacker has one.
-      if (this.state.hands[seat].missiles.some(m => m.kind === 'aam')) {
-        this.openAamPrompt(seat, planeIndex, stackedEnemyColor as Color, [targetIdx], cellId);
-      } else {
-        this.applyCollision(seat, planeIndex, [{ color: stackedEnemyColor as Color, index: targetIdx }]);
-      }
+      targets = [{ color: stackedEnemyColor as Color, index: targetIdx }];
     } else {
-      // Single enemy(ies): collision with all of them; if attacker has AAM, offer for the first one.
-      const targets = enemies.map(e => ({ color: e.color, index: e.index }));
-      if (this.state.hands[seat].missiles.some(m => m.kind === 'aam')) {
-        const t = targets[0]!;
-        this.openAamPrompt(seat, planeIndex, t.color, [t.index], cellId);
-      } else {
-        this.applyCollision(seat, planeIndex, targets);
-      }
+      targets = enemies.map(e => ({ color: e.color, index: e.index }));
+    }
+
+    // Optional AAM duel: if attacker has an AAM card and the option is on,
+    // open the duel prompt against the first target. Otherwise, collision is
+    // immediate — both sides go straight back to hangar.
+    if (opts.enableAamDuel && this.state.hands[seat].missiles.some(m => m.kind === 'aam')) {
+      const t = targets[0]!;
+      this.openAamPrompt(seat, planeIndex, t.color, [t.index], cellId);
+    } else {
+      this.applyCollision(seat, planeIndex, targets);
     }
   }
 
@@ -424,6 +453,9 @@ export class GameEngine {
   }
 
   // ---------- AAM duel ----------
+  // The duel is a multi-step state machine driven by `combat:respond` events.
+  // Each step prompts the seat whose turn it is (attacker or defender) to
+  // either roll the die or make a binary decision. See `AamStep` doc.
   private openAamPrompt(
     attacker: Color, attackerIdx: number,
     defender: Color, defenderIdxs: number[], cellId: number,
@@ -434,11 +466,14 @@ export class GameEngine {
       attackerPlaneIndex: attackerIdx,
       defenderPlaneIndices: defenderIdxs,
       collisionCellId: cellId,
+      step: 'fireDecision',
     };
     this.state.phase = 'awaitCombat';
     this.state.prompts = [{
       kind: 'combat', seat: attacker, combatId: id,
       description: `Collision with ${defender}. Launch AAM?`,
+      descriptionKey: 'combat.aamPrompt',
+      descriptionParams: { defender },
       options: ['fire', 'skip'],
     }];
   }
@@ -448,64 +483,8 @@ export class GameEngine {
     const pc = this.pendingCombat;
 
     if (pc.kind === 'aam') {
-      if (seat !== pc.attacker) return this.err('not your decision');
-      const attacker = pc.attacker, defender = pc.defender;
-      const defIdx = pc.defenderPlaneIndices[0]!;
-      const cellId = pc.collisionCellId;
-      if (choice === 'skip') {
-        // Plain collision.
-        this.pendingCombat = null;
-        this.applyCollision(attacker, pc.attackerPlaneIndex, [{ color: defender, index: defIdx }]);
-        this.afterCombatResolved();
-        return;
-      }
-      if (choice === 'fire') {
-        // Spend AAM
-        if (!this.spendMissile(attacker, 'aam')) return this.err('no aam');
-        const res = aamDuel();
-        this.logI18n('log.aamDuel', { attacker, defender });
-        if (res.outcome === 'attackerWins') {
-          // Defender returns; attacker stays.
-          this.returnToHangar(this.state.planes[defender][defIdx]!);
-          this.logI18n('log.returnHangar', { color: defender, n: defIdx + 1 });
-          this.pendingCombat = null;
-          this.afterCombatResolved();
-          return;
-        }
-        if (res.outcome === 'defenderWins') {
-          // Defender holds AAM? Counter-attack.
-          if (this.state.hands[defender].missiles.some(m => m.kind === 'aam')) {
-            // Convert to counter prompt.
-            this.spendMissile(defender, 'aam');
-            // Defender wins counter? attacker returns; else tie/attacker still stands.
-            const cr = aamDuel();
-            this.logI18n('log.counterAam', { defender, attacker });
-            if (cr.outcome === 'defenderWins') {
-              this.returnToHangar(this.state.planes[attacker][pc.attackerPlaneIndex]!);
-              this.logI18n('log.returnHangar', { color: attacker, n: pc.attackerPlaneIndex + 1 });
-            } else if (cr.outcome === 'attackerWins') {
-              this.logI18n('log.counterAttackerWins');
-            } else {
-              this.logI18n('log.counterTie');
-            }
-            this.pendingCombat = null;
-            this.afterCombatResolved();
-            return;
-          } else {
-            // No counter possible: attacker returns.
-            this.returnToHangar(this.state.planes[attacker][pc.attackerPlaneIndex]!);
-            this.logI18n('log.returnHangar', { color: attacker, n: pc.attackerPlaneIndex + 1 });
-            this.pendingCombat = null;
-            this.afterCombatResolved();
-            return;
-          }
-        }
-        // Tie: both stay; attacker continues.
-        this.logI18n('log.aamTie');
-        this.pendingCombat = null;
-        this.afterCombatResolved();
-        return;
-      }
+      this.handleAamRespond(pc, seat, choice);
+      return;
     }
 
     if (pc.kind === 'sam') {
@@ -532,6 +511,180 @@ export class GameEngine {
     return this.err('unhandled combat kind');
   }
 
+  /**
+   * AAM combat state machine. Drives the alternating-roll duel and the
+   * optional defender counter-attack on a successful defense. See `AamStep`.
+   */
+  private handleAamRespond(
+    pc: Extract<PendingCombat, { kind: 'aam' }>,
+    seat: Color,
+    choice: string,
+  ) {
+    const { attacker, defender, attackerPlaneIndex, defenderPlaneIndices } = pc;
+    const defIdx = defenderPlaneIndices[0]!;
+
+    if (pc.step === 'fireDecision') {
+      if (seat !== attacker) return this.err('not your decision');
+      if (choice === 'skip') {
+        // Decline to fire AAM — fall back to plain collision.
+        this.pendingCombat = null;
+        this.applyCollision(attacker, attackerPlaneIndex, [{ color: defender, index: defIdx }]);
+        this.afterCombatResolved();
+        return;
+      }
+      if (choice === 'fire') {
+        if (!this.spendMissile(attacker, 'aam')) return this.err('no aam');
+        this.logI18n('log.aamDuel', { attacker, defender });
+        pc.step = 'attackerRoll';
+        this.state.prompts = [{
+          kind: 'combat', seat: attacker, combatId: pc.id,
+          description: `${attacker}, roll the AAM die`,
+          descriptionKey: 'combat.aam.attackerRoll',
+          descriptionParams: { attacker, defender },
+          options: ['roll'],
+        }];
+        this.commit();
+        return;
+      }
+      return this.err('bad choice');
+    }
+
+    if (pc.step === 'attackerRoll') {
+      if (seat !== attacker) return this.err('not your roll');
+      if (choice !== 'roll') return this.err('bad choice');
+      const r = rollD6();
+      pc.attackerRoll = r;
+      this.cb.onEvent({ kind: 'dice', seat: attacker, value: r, chain: 0 });
+      this.logI18n('log.aamRoll', { color: attacker, n: r });
+      pc.step = 'defenderRoll';
+      this.state.prompts = [{
+        kind: 'combat', seat: defender, combatId: pc.id,
+        description: `Attacker rolled ${r}. ${defender}, roll the AAM die`,
+        descriptionKey: 'combat.aam.defenderRoll',
+        descriptionParams: { attacker, defender, attackerRoll: r },
+        options: ['roll'],
+      }];
+      this.commit();
+      return;
+    }
+
+    if (pc.step === 'defenderRoll') {
+      if (seat !== defender) return this.err('not your roll');
+      if (choice !== 'roll') return this.err('bad choice');
+      const r = rollD6();
+      pc.defenderRoll = r;
+      this.cb.onEvent({ kind: 'dice', seat: defender, value: r, chain: 0 });
+      this.logI18n('log.aamRoll', { color: defender, n: r });
+      const a = pc.attackerRoll!;
+      if (a > r) {
+        // Attacker wins primary: defender returns; attacker stays.
+        this.returnToHangar(this.state.planes[defender][defIdx]!);
+        this.logI18n('log.returnHangar', { color: defender, n: defIdx + 1 });
+        this.pendingCombat = null;
+        this.afterCombatResolved();
+        return;
+      }
+      if (a === r) {
+        // Tie: both stay; attacker continues.
+        this.logI18n('log.aamTie');
+        this.pendingCombat = null;
+        this.afterCombatResolved();
+        return;
+      }
+      // Defense succeeded. If defender holds another AAM, offer optional counter.
+      if (this.state.hands[defender].missiles.some(m => m.kind === 'aam')) {
+        pc.step = 'counterDecision';
+        this.state.prompts = [{
+          kind: 'combat', seat: defender, combatId: pc.id,
+          description: `Defense succeeded (${a} vs ${r}). Counter ${attacker} with AAM?`,
+          descriptionKey: 'combat.aam.counterDecision',
+          descriptionParams: { attacker, defender, attackerRoll: a, defenderRoll: r },
+          options: ['counter', 'skip'],
+        }];
+        this.commit();
+        return;
+      }
+      // No AAM available to counter: attacker is shot down.
+      this.returnToHangar(this.state.planes[attacker][attackerPlaneIndex]!);
+      this.logI18n('log.returnHangar', { color: attacker, n: attackerPlaneIndex + 1 });
+      this.pendingCombat = null;
+      this.afterCombatResolved();
+      return;
+    }
+
+    if (pc.step === 'counterDecision') {
+      if (seat !== defender) return this.err('not your decision');
+      if (choice === 'skip') {
+        // Defender declines counter — primary defense still wins, attacker returns.
+        this.returnToHangar(this.state.planes[attacker][attackerPlaneIndex]!);
+        this.logI18n('log.returnHangar', { color: attacker, n: attackerPlaneIndex + 1 });
+        this.pendingCombat = null;
+        this.afterCombatResolved();
+        return;
+      }
+      if (choice === 'counter') {
+        if (!this.spendMissile(defender, 'aam')) return this.err('no aam');
+        this.logI18n('log.counterAam', { defender, attacker });
+        pc.step = 'counterDefenderRoll';
+        this.state.prompts = [{
+          kind: 'combat', seat: defender, combatId: pc.id,
+          description: `Counter — ${defender}, roll the AAM die`,
+          descriptionKey: 'combat.aam.counterDefenderRoll',
+          descriptionParams: { attacker, defender },
+          options: ['roll'],
+        }];
+        this.commit();
+        return;
+      }
+      return this.err('bad choice');
+    }
+
+    if (pc.step === 'counterDefenderRoll') {
+      if (seat !== defender) return this.err('not your roll');
+      if (choice !== 'roll') return this.err('bad choice');
+      const r = rollD6();
+      pc.counterDefenderRoll = r;
+      this.cb.onEvent({ kind: 'dice', seat: defender, value: r, chain: 0 });
+      this.logI18n('log.aamRoll', { color: defender, n: r });
+      pc.step = 'counterAttackerRoll';
+      this.state.prompts = [{
+        kind: 'combat', seat: attacker, combatId: pc.id,
+        description: `Counter — defender rolled ${r}. ${attacker}, roll the AAM die`,
+        descriptionKey: 'combat.aam.counterAttackerRoll',
+        descriptionParams: { attacker, defender, counterDefenderRoll: r },
+        options: ['roll'],
+      }];
+      this.commit();
+      return;
+    }
+
+    if (pc.step === 'counterAttackerRoll') {
+      if (seat !== attacker) return this.err('not your roll');
+      if (choice !== 'roll') return this.err('bad choice');
+      const r = rollD6();
+      pc.counterAttackerRoll = r;
+      this.cb.onEvent({ kind: 'dice', seat: attacker, value: r, chain: 0 });
+      this.logI18n('log.aamRoll', { color: attacker, n: r });
+      const d = pc.counterDefenderRoll!;
+      if (d > r) {
+        // Counter succeeds: attacker returns to hangar.
+        this.returnToHangar(this.state.planes[attacker][attackerPlaneIndex]!);
+        this.logI18n('log.returnHangar', { color: attacker, n: attackerPlaneIndex + 1 });
+      } else if (d === r) {
+        // Counter tie: both stay.
+        this.logI18n('log.counterTie');
+      } else {
+        // Attacker out-rolls the counter: counter fails, both stay.
+        this.logI18n('log.counterAttackerWins');
+      }
+      this.pendingCombat = null;
+      this.afterCombatResolved();
+      return;
+    }
+
+    return this.err('unhandled aam step');
+  }
+
   private afterCombatResolved() {
     this.state.prompts = [];
     if (this.checkVictory()) return;
@@ -550,7 +703,10 @@ export class GameEngine {
       if (card) {
         hand.missiles.push(card);
         this.cb.onEvent({ kind: 'cardDrawn', seat, card });
-        this.logI18n('log.drewMissile', { color: seat, kind: card.kind.toUpperCase() });
+        // Public log intentionally omits the missile kind so opponents can't
+        // see what was drawn; the owner learns the kind via the private
+        // S2C.EventCard event emitted alongside this log line.
+        this.logI18n('log.drewMissile', { color: seat });
       }
     } else if (cell.kind === 'radarFactory') {
       const card = this.radarDeck.draw();
@@ -841,6 +997,8 @@ export class GameEngine {
       this.state.prompts = [{
         kind: 'combat', seat: def, combatId: id,
         description: `Enemy ${attacker} entered your radar zone — fire SAM?`,
+        descriptionKey: 'combat.samPrompt',
+        descriptionParams: { attacker },
         options: ['fire', 'skip'],
       }];
       return;

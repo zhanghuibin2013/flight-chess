@@ -137,11 +137,21 @@ export function resolveJumpChain(
     curProgress = progressFromRingIdx(curRingIdx);
     shortcutUsed = true;
     // Then jump from exit if eligible & not blocked.
+    // Guard: only chain a jump when the target lies strictly forward on this
+    // color's path and still within the ring portion. Otherwise the ring walk
+    // would wrap around and pull the plane backward (e.g. exit at progress 36
+    // has no further same-color jump cell before landing — the wrap-around
+    // target would land near takeoff, which is BEHIND the plane).
     const targetRingIdx = board.nextSameColorRingIdx(color, curRingIdx);
+    const targetProgress = progressFromRingIdx(targetRingIdx);
     const targetCellId = board.ring[targetRingIdx]!;
-    if (!isCellOccupied(targetCellId)) {
+    if (
+      targetProgress > curProgress &&
+      targetProgress < LANDING_START_STEP &&
+      !isCellOccupied(targetCellId)
+    ) {
       curRingIdx = targetRingIdx;
-      curProgress = progressFromRingIdx(curRingIdx);
+      curProgress = targetProgress;
       jumped = true;
     }
     return {
@@ -153,17 +163,24 @@ export function resolveJumpChain(
 
   // Normal jump on a same-color cell.
   if (board.isJumpForColor(color, curRingIdx)) {
-    const cell = board.cells[board.ring[curRingIdx]!]!;
     // takeoff is the player's own takeoff — also same color, but we DO allow jumping from it
     // per most house rules; spec is silent. We choose: do not jump from takeoff cell (progress=0)
     // because the plane just took off there.
     if (curProgress !== 0) {
       const targetRingIdx = board.nextSameColorRingIdx(color, curRingIdx);
+      const targetProgress = progressFromRingIdx(targetRingIdx);
       const targetCellId = board.ring[targetRingIdx]!;
       const targetCell = board.cells[targetCellId]!;
-      if (!isCellOccupied(targetCellId)) {
+      // Same forward-only guard as above (prevents wrap-around backward jumps,
+      // e.g. directly landing on a shortcutExit at progress 36 with no
+      // further same-color jump cell before landing).
+      if (
+        targetProgress > curProgress &&
+        targetProgress < LANDING_START_STEP &&
+        !isCellOccupied(targetCellId)
+      ) {
         curRingIdx = targetRingIdx;
-        curProgress = progressFromRingIdx(curRingIdx);
+        curProgress = targetProgress;
         jumped = true;
         // If we landed on a same-color shortcut entry via a jump, traverse only — no extra jump.
         if (targetCell.kind === 'shortcutEntry') {

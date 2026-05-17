@@ -206,7 +206,7 @@ export default function ActionPanel() {
         )}
         {state.diceChain > 0 && <span className="chain">×{state.diceChain}</span>}
       </div>
-      <div className="phase">{t('game.phase', { phase: state.phase })}</div>
+      <div className="phase">{t('game.phase', { phase: t(`phase.${state.phase}`) })}</div>
       {isMyTurn && state.phase === 'awaitRoll' && (
         <button className="primary big" onClick={onRollClick} disabled={rolling}>
           {rolling ? t('game.rolling') : t('game.roll')}

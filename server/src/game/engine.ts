@@ -167,6 +167,17 @@ export class GameEngine {
   }
 
   // ---------- Logging & commit ----------
+  /**
+   * Emit a log line. The wire format is `i18n:<json>` so the client can render
+   * it in the active locale; both this.state.log and the EventLog event use the
+   * same encoded string. Plain string logs are still supported for legacy code.
+   */
+  private logI18n(key: string, params?: Record<string, string | number>) {
+    const line = 'i18n:' + JSON.stringify({ k: key, p: params || {} });
+    this.state.log.push(line);
+    if (this.state.log.length > MAX_LOG) this.state.log.splice(0, this.state.log.length - MAX_LOG);
+    this.cb.onEvent({ kind: 'log', line });
+  }
   private log(line: string) {
     this.state.log.push(line);
     if (this.state.log.length > MAX_LOG) this.state.log.splice(0, this.state.log.length - MAX_LOG);
@@ -187,7 +198,7 @@ export class GameEngine {
       const hand = this.state.hands[next];
       if (hand.skipRounds > 0) {
         hand.skipRounds -= 1;
-        this.log(`${next} skipped a round`);
+        this.logI18n('log.skippedRound', { color: next });
         continue;
       }
       this.state.turn = next;
@@ -210,11 +221,11 @@ export class GameEngine {
     this.state.lastDice = roll;
     if (roll === 6) this.state.diceChain += 1;
     this.cb.onEvent({ kind: 'dice', seat, value: roll, chain: this.state.diceChain });
-    this.log(`${seat} rolled ${roll}`);
+    this.logI18n('log.rolled', { color: seat, n: roll });
 
     // 3 sixes in a row => bust (configurable house rule); cancels move and ends turn.
     if (this.state.diceChain >= 3) {
-      this.log(`${seat} rolled three 6's — turn cancelled`);
+      this.logI18n('log.tripleSix', { color: seat });
       this.advanceTurn();
       return;
     }
@@ -241,7 +252,7 @@ export class GameEngine {
       this.state.prompts = [{ kind: 'move', seat, planes: movableIndices, roll }];
     } else {
       // No legal move at all: extra roll if 6, else end turn.
-      this.log(`${seat} has no legal move`);
+      this.logI18n('log.noLegalMove', { color: seat });
       if (roll === 6) {
         this.state.phase = 'awaitRoll';
         this.state.prompts = [];
@@ -265,7 +276,7 @@ export class GameEngine {
     plane.cellId = takeoffCell;
     plane.progress = 0;
     plane.perched = false;
-    this.log(`${seat}'s plane #${planeIndex + 1} took off`);
+    this.logI18n('log.tookOff', { color: seat, n: planeIndex + 1 });
     // Takeoff cell may be occupied by enemy; takeoff itself does not collide with enemies
     // (per most rule sets the takeoff is a safe entry). We treat it as safe.
     this.afterTurnAction(seat);
@@ -291,7 +302,7 @@ export class GameEngine {
     const step = stepForward(this.board, seat, plane.progress, roll);
     plane.progress = step.progress;
     plane.cellId = step.cellId;
-    if (step.bounced) this.log(`${seat} bounced back from home overshoot`);
+    if (step.bounced) this.logI18n('log.bounced', { color: seat });
 
     this.resolveLandingAndContinue(seat, planeIndex);
   }
@@ -309,8 +320,8 @@ export class GameEngine {
       if (jr.finalProgress !== plane.progress) {
         plane.progress = jr.finalProgress;
         plane.cellId = jr.finalCellId;
-        if (jr.shortcutUsed) this.log(`${seat} took a shortcut`);
-        if (jr.jumped) this.log(`${seat} jumped on a same-color cell`);
+        if (jr.shortcutUsed) this.logI18n('log.shortcut', { color: seat });
+        if (jr.jumped) this.logI18n('log.jumped', { color: seat });
       }
     }
 
@@ -320,7 +331,7 @@ export class GameEngine {
     if (isAtHome(plane.progress!)) {
       plane.state = 'home';
       plane.cellId = this.board.paths[seat].home;
-      this.log(`${seat}'s plane #${planeIndex + 1} reached home`);
+      this.logI18n('log.reachedHome', { color: seat, n: planeIndex + 1 });
     } else {
       this.handleStackAndCollision(seat, planeIndex);
     }
@@ -362,7 +373,7 @@ export class GameEngine {
     if (roll === 6 && stackedEnemyColor) {
       // Perch on top, advance next turn.
       plane.perched = true;
-      this.log(`${seat} perched on top of ${stackedEnemyColor}'s stack`);
+      this.logI18n('log.perched', { color: seat, enemy: stackedEnemyColor });
       return;
     }
 
@@ -402,7 +413,7 @@ export class GameEngine {
       this.returnToHangar(dp);
     }
     const list = defenders.map(d => `${d.color}#${d.index + 1}`).join(', ');
-    this.log(`Collision: ${attacker}#${attackerIdx + 1} vs ${list} — all return to hangar`);
+    this.logI18n('log.collision', { color: attacker, n: attackerIdx + 1, list });
   }
 
   private returnToHangar(p: Plane) {
@@ -452,11 +463,11 @@ export class GameEngine {
         // Spend AAM
         if (!this.spendMissile(attacker, 'aam')) return this.err('no aam');
         const res = aamDuel();
-        this.log(`AAM duel: attacker ${res.attacker} vs defender ${res.defender}`);
+        this.logI18n('log.aamDuel', { attacker, defender });
         if (res.outcome === 'attackerWins') {
           // Defender returns; attacker stays.
           this.returnToHangar(this.state.planes[defender][defIdx]!);
-          this.log(`${defender}#${defIdx + 1} returns to hangar`);
+          this.logI18n('log.returnHangar', { color: defender, n: defIdx + 1 });
           this.pendingCombat = null;
           this.afterCombatResolved();
           return;
@@ -468,14 +479,14 @@ export class GameEngine {
             this.spendMissile(defender, 'aam');
             // Defender wins counter? attacker returns; else tie/attacker still stands.
             const cr = aamDuel();
-            this.log(`Counter AAM: defender ${cr.defender} vs attacker ${cr.attacker}`);
+            this.logI18n('log.counterAam', { defender, attacker });
             if (cr.outcome === 'defenderWins') {
               this.returnToHangar(this.state.planes[attacker][pc.attackerPlaneIndex]!);
-              this.log(`${attacker}#${pc.attackerPlaneIndex + 1} returns to hangar`);
+              this.logI18n('log.returnHangar', { color: attacker, n: pc.attackerPlaneIndex + 1 });
             } else if (cr.outcome === 'attackerWins') {
-              this.log('Attacker re-wins after counter — both stay, attacker continues');
+              this.logI18n('log.counterAttackerWins');
             } else {
-              this.log('Counter tie — both stay');
+              this.logI18n('log.counterTie');
             }
             this.pendingCombat = null;
             this.afterCombatResolved();
@@ -483,14 +494,14 @@ export class GameEngine {
           } else {
             // No counter possible: attacker returns.
             this.returnToHangar(this.state.planes[attacker][pc.attackerPlaneIndex]!);
-            this.log(`${attacker}#${pc.attackerPlaneIndex + 1} returns to hangar`);
+            this.logI18n('log.returnHangar', { color: attacker, n: pc.attackerPlaneIndex + 1 });
             this.pendingCombat = null;
             this.afterCombatResolved();
             return;
           }
         }
         // Tie: both stay; attacker continues.
-        this.log('AAM tie — both stay');
+        this.logI18n('log.aamTie');
         this.pendingCombat = null;
         this.afterCombatResolved();
         return;
@@ -505,13 +516,13 @@ export class GameEngine {
         // Shield?
         if (this.state.hands[pc.attacker].shield) {
           this.state.hands[pc.attacker].shield = false;
-          this.log(`${pc.attacker} shielded SAM hit`);
+          this.logI18n('log.samShielded', { color: pc.attacker });
         } else {
           this.returnToHangar(target);
-          this.log(`SAM hit: ${pc.attacker}#${pc.planeIndex + 1} returns to hangar`);
+          this.logI18n('log.samHit', { color: pc.attacker, n: pc.planeIndex + 1 });
         }
       } else {
-        this.log(`${pc.defender} held fire`);
+        this.logI18n('log.heldFire', { color: pc.defender });
       }
       this.pendingCombat = null;
       this.afterCombatResolved();
@@ -539,14 +550,14 @@ export class GameEngine {
       if (card) {
         hand.missiles.push(card);
         this.cb.onEvent({ kind: 'cardDrawn', seat, card });
-        this.log(`${seat} drew ${card.kind.toUpperCase()} missile`);
+        this.logI18n('log.drewMissile', { color: seat, kind: card.kind.toUpperCase() });
       }
     } else if (cell.kind === 'radarFactory') {
       const card = this.radarDeck.draw();
       if (card) {
         hand.radars += 1;
         this.cb.onEvent({ kind: 'cardDrawn', seat, card: { id: card.id, type: 'radar' } });
-        this.log(`${seat} got a radar (now ${hand.radars})`);
+        this.logI18n('log.gotRadar', { color: seat, n: hand.radars });
       }
     } else if (cell.kind === 'library') {
       this.openLibrary(seat);
@@ -556,7 +567,7 @@ export class GameEngine {
   private openLibrary(seat: Color) {
     const q = this.questions.draw();
     if (!q) {
-      this.log(`Library has no questions loaded — no effect`);
+      this.logI18n('log.libraryEmpty');
       return;
     }
     const id = nanoid(6);
@@ -572,10 +583,10 @@ export class GameEngine {
     this.questions.discard(this.pendingQA.question);
     this.pendingQA = null;
     if (correct) {
-      this.log(`${seat} answered correctly — drawing reward`);
+      this.logI18n('log.qaCorrect', { color: seat });
       this.applyDrawnReward(seat);
     } else {
-      this.log(`${seat} answered wrong — drawing punishment`);
+      this.logI18n('log.qaWrong', { color: seat });
       this.applyDrawnPunishment(seat);
     }
     this.state.prompts = [];
@@ -587,7 +598,7 @@ export class GameEngine {
     const card = this.rewardDeck.draw();
     if (!card) return;
     this.cb.onEvent({ kind: 'cardDrawn', seat, card });
-    this.log(`${seat} drew reward: ${card.kind}`);
+    this.logI18n('log.drewReward', { color: seat, kind: card.kind });
     if (isHeldReward(card.kind)) {
       this.state.hands[seat].heldRewards.push(card);
       // Some held rewards take immediate action via UI; we keep them in hand by default.
@@ -624,7 +635,7 @@ export class GameEngine {
     switch (card.kind) {
       case 'rerollFwd':
         this.pendingExtraRoll = true;
-        this.log(`${seat} will reroll & advance`);
+        this.logI18n('log.willReroll', { color: seat });
         break;
       case 'fwd2': this.advanceLastMovedPlane(seat, 2); break;
       case 'fwd4': this.advanceLastMovedPlane(seat, 4); break;
@@ -637,7 +648,7 @@ export class GameEngine {
     const card = this.punishmentDeck.draw();
     if (!card) return;
     this.cb.onEvent({ kind: 'cardDrawn', seat, card });
-    this.log(`${seat} drew punishment: ${card.kind}`);
+    this.logI18n('log.drewPunishment', { color: seat, kind: card.kind });
     if (isHeldPunishment(card.kind)) {
       this.state.hands[seat].heldPunishments.push(card);
       // Apply (lose missile / radar) immediately.
@@ -668,7 +679,7 @@ export class GameEngine {
         // Special: roll d6 immediately and retreat.
         const r = rollD6();
         this.cb.onEvent({ kind: 'dice', seat, value: r, chain: 0 });
-        this.log(`${seat} retreats ${r}`);
+        this.logI18n('log.retreats', { color: seat, n: r });
         this.retreatLastMovedPlane(seat, r);
         break;
       case 'bwd2': this.retreatLastMovedPlane(seat, 2); break;
@@ -677,7 +688,7 @@ export class GameEngine {
       case 'toTakeoff': this.sendLastMovedPlaneToTakeoff(seat); break;
       case 'selfSkip':
         this.state.hands[seat].skipRounds += 1;
-        this.log(`${seat} will skip a round`);
+        this.logI18n('log.willSkip', { color: seat });
         break;
       default: break;
     }
@@ -733,7 +744,7 @@ export class GameEngine {
         this.state.hands[targetColor].skipRounds += 1;
         hand.heldRewards.splice(ri, 1);
         this.rewardDeck.discard(card);
-        this.log(`${seat} forces ${targetColor} to skip a round`);
+        this.logI18n('log.enemySkip', { color: seat, target: targetColor });
         this.commit();
         return;
       }
@@ -763,12 +774,12 @@ export class GameEngine {
     if (this.state.hands[defender].radars <= 0) return this.err('target has no radars');
     const m = this.state.hands[attacker].missiles.splice(missileIdx, 1)[0]!;
     const r = armRoll();
-    this.log(`${attacker} fires ARM at ${defender} radar — rolled ${r.roll}`);
+    this.logI18n('log.armFire', { attacker, defender, n: r.roll });
     if (r.success) {
       this.state.hands[defender].radars -= 1;
-      this.log(`ARM success — ${defender} loses a radar (now ${this.state.hands[defender].radars})`);
+      this.logI18n('log.armSuccess', { color: defender, n: this.state.hands[defender].radars });
     } else {
-      this.log(`ARM missed`);
+      this.logI18n('log.armMiss');
     }
     this.missileDeck.discard(m);
     this.commit();
@@ -781,7 +792,7 @@ export class GameEngine {
       this.state.hands[defender].shield = false;
       const m = this.state.hands[attacker].missiles.splice(missileIdx, 1)[0]!;
       this.missileDeck.discard(m);
-      this.log(`${defender} shielded the cruise missile`);
+      this.logI18n('log.cruiseShielded', { color: defender });
       this.commit();
       return;
     }
@@ -792,15 +803,15 @@ export class GameEngine {
     const m = this.state.hands[attacker].missiles.splice(missileIdx, 1)[0]!;
     if (onTakeoff) {
       this.returnToHangar(dp);
-      this.log(`Cruise auto-hits ${defender}#${defPlaneIdx + 1} on takeoff — returns to hangar`);
+      this.logI18n('log.cruiseTakeoffHit', { color: defender, n: defPlaneIdx + 1 });
     } else {
       const r = cruiseLandingRoll();
-      this.log(`Cruise vs landing strip — rolled ${r.roll}`);
+      this.logI18n('log.cruiseLandingRoll', { n: r.roll });
       if (r.success) {
         this.returnToHangar(dp);
-        this.log(`Cruise hit — ${defender}#${defPlaneIdx + 1} returns to hangar`);
+        this.logI18n('log.cruiseHit', { color: defender, n: defPlaneIdx + 1 });
       } else {
-        this.log(`Cruise missed`);
+        this.logI18n('log.cruiseMiss');
       }
     }
     this.missileDeck.discard(m);
@@ -915,7 +926,7 @@ export class GameEngine {
       this.state.winners = wins;
       this.state.phase = 'gameOver';
       this.state.prompts = [];
-      this.log(`Game over — winners: ${wins.join(', ')}`);
+      this.logI18n('log.gameOver', { list: wins.join(', ') });
       this.cb.onGameOver(wins);
       this.commit();
       return true;
@@ -925,7 +936,7 @@ export class GameEngine {
 
   // ---------- Errors ----------
   private err(msg: string) {
-    this.log(`engine error: ${msg}`);
+    this.logI18n('log.engineError', { msg });
     this.commit();
   }
 }

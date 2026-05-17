@@ -243,13 +243,17 @@ function makeCallbacks(io: Server, registry: RoomRegistry, roomId: string): Engi
             seat: ev.seat, cardType: ev.card.type, cardKind: (ev.card as any).kind,
           });
         }
-        io.to(roomId).emit(S2C.EventLog, { line: `${ev.seat} drew a card` });
+        io.to(roomId).emit(S2C.EventLog, {
+          line: 'i18n:' + JSON.stringify({ k: 'log.drewCard', p: { color: ev.seat } }),
+        });
       } else if (ev.kind === 'log') {
         io.to(roomId).emit(S2C.EventLog, { line: ev.line });
       }
     },
     onGameOver(winners) {
-      io.to(roomId).emit(S2C.EventLog, { line: `Game over — winners: ${winners.join(', ')}` });
+      io.to(roomId).emit(S2C.EventLog, {
+        line: 'i18n:' + JSON.stringify({ k: 'log.gameOver', p: { list: winners.join(', ') } }),
+      });
     },
   };
 }

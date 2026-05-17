@@ -83,6 +83,15 @@ const ZH: Dict = {
   'game.spectating':        '观战中',
   'game.turnLabel':         '{color} 的回合',
   'game.phase':             '阶段：{phase}',
+  'phase.lobby':              '等待中',
+  'phase.awaitRoll':          '等待掷骰',
+  'phase.awaitTakeoffChoice': '选择起飞飞机',
+  'phase.awaitMoveChoice':    '选择移动飞机',
+  'phase.resolving':          '结算中',
+  'phase.awaitCardActions':   '等待出牌',
+  'phase.awaitCombat':        '空战中',
+  'phase.awaitQA':            '答题中',
+  'phase.gameOver':           '游戏结束',
   'game.roll':              '掷骰子',
   'game.rolling':           '掷骰中…',
   'game.choosePlane':       '选择一架飞机移动（{n} 步）：',
@@ -123,6 +132,49 @@ const ZH: Dict = {
   // Log / chat
   'log.title':              '日志',
   'log.placeholder':        '说点什么…',
+  // Structured server log lines (rendered via i18n: prefix)
+  'log.skippedRound':       '{color} 跳过一回合',
+  'log.rolled':             '{color} 掷出了 {n}',
+  'log.tripleSix':          '{color} 连掷三个 6 — 本回合作废',
+  'log.noLegalMove':        '{color} 没有可行动作',
+  'log.tookOff':            '{color} 的 #{n} 号机起飞',
+  'log.bounced':            '{color} 越过基地，反弹回退',
+  'log.shortcut':           '{color} 触发了捷径跳跃',
+  'log.jumped':             '{color} 在同色格子跳跃',
+  'log.reachedHome':        '{color} 的 #{n} 号机抵达基地',
+  'log.perched':            '{color} 叠停在 {enemy} 的机叠之上',
+  'log.collision':          '碰撞：{color} #{n} 撞上 {list} — 全部回库',
+  'log.aamDuel':            '空空导弹对决：进攻方 {attacker} vs 防守方 {defender}',
+  'log.returnHangar':       '{color} #{n} 返回机库',
+  'log.counterAam':         '反击空空：防守方 {defender} vs 进攻方 {attacker}',
+  'log.counterAttackerWins':'反击中进攻方再次取胜 — 双方留场，进攻方继续',
+  'log.counterTie':         '反击平局 — 双方留场',
+  'log.aamTie':             '空空对决平局 — 双方留场',
+  'log.samShielded':        '{color} 用护盾抵挡了地空导弹',
+  'log.samHit':             '地空命中：{color} #{n} 返回机库',
+  'log.heldFire':           '{color} 选择按兵不动',
+  'log.drewMissile':        '{color} 抽到 {kind} 导弹',
+  'log.gotRadar':           '{color} 获得雷达（共 {n}）',
+  'log.libraryEmpty':       '题库未加载题目 — 无效果',
+  'log.qaCorrect':          '{color} 答题正确 — 抽奖励卡',
+  'log.qaWrong':            '{color} 答题错误 — 抽惩罚卡',
+  'log.drewReward':         '{color} 抽到奖励：{kind}',
+  'log.willReroll':         '{color} 将额外掷骰前进',
+  'log.drewPunishment':     '{color} 抽到惩罚：{kind}',
+  'log.retreats':           '{color} 后退 {n} 步',
+  'log.willSkip':           '{color} 将跳过一回合',
+  'log.enemySkip':          '{color} 强制 {target} 跳过一回合',
+  'log.armFire':            '{attacker} 对 {defender} 雷达发射 ARM — 掷出 {n}',
+  'log.armSuccess':         'ARM 命中 — {color} 损失一座雷达（剩 {n}）',
+  'log.armMiss':            'ARM 未命中',
+  'log.cruiseShielded':     '{color} 用护盾抵挡了巡航导弹',
+  'log.cruiseTakeoffHit':   '巡航命中起飞位 — {color} #{n} 返回机库',
+  'log.cruiseLandingRoll':  '巡航攻击降落带 — 掷出 {n}',
+  'log.cruiseHit':          '巡航命中 — {color} #{n} 返回机库',
+  'log.cruiseMiss':         '巡航未命中',
+  'log.drewCard':           '{color} 抽了一张牌',
+  'log.gameOver':           '游戏结束 — 获胜者：{list}',
+  'log.engineError':        '引擎错误：{msg}',
 
   // Combat / QA
   'combat.title':           '战斗',
@@ -208,6 +260,15 @@ const EN: Dict = {
   'game.spectating':        'Spectating',
   'game.turnLabel':         "{color}'s turn",
   'game.phase':             'phase: {phase}',
+  'phase.lobby':              'Waiting',
+  'phase.awaitRoll':          'Awaiting roll',
+  'phase.awaitTakeoffChoice': 'Choose plane to take off',
+  'phase.awaitMoveChoice':    'Choose plane to move',
+  'phase.resolving':          'Resolving',
+  'phase.awaitCardActions':   'Awaiting card play',
+  'phase.awaitCombat':        'Combat',
+  'phase.awaitQA':            'Q&A',
+  'phase.gameOver':           'Game over',
   'game.roll':              'Roll Dice',
   'game.rolling':           'Rolling…',
   'game.choosePlane':       'Choose a plane to move ({n} steps):',
@@ -248,6 +309,49 @@ const EN: Dict = {
   // Log / chat
   'log.title':              'Log',
   'log.placeholder':        'Say something…',
+  // Structured server log lines (rendered via i18n: prefix)
+  'log.skippedRound':       '{color} skipped a round',
+  'log.rolled':             '{color} rolled {n}',
+  'log.tripleSix':          "{color} rolled three 6's — turn cancelled",
+  'log.noLegalMove':        '{color} has no legal move',
+  'log.tookOff':            "{color}'s plane #{n} took off",
+  'log.bounced':            '{color} bounced back from home overshoot',
+  'log.shortcut':           '{color} took a shortcut',
+  'log.jumped':             '{color} jumped on a same-color cell',
+  'log.reachedHome':        "{color}'s plane #{n} reached home",
+  'log.perched':            "{color} perched on top of {enemy}'s stack",
+  'log.collision':          'Collision: {color}#{n} vs {list} — all return to hangar',
+  'log.aamDuel':            'AAM duel: attacker {attacker} vs defender {defender}',
+  'log.returnHangar':       '{color}#{n} returns to hangar',
+  'log.counterAam':         'Counter AAM: defender {defender} vs attacker {attacker}',
+  'log.counterAttackerWins':'Attacker re-wins after counter — both stay, attacker continues',
+  'log.counterTie':         'Counter tie — both stay',
+  'log.aamTie':             'AAM tie — both stay',
+  'log.samShielded':        '{color} shielded SAM hit',
+  'log.samHit':             'SAM hit: {color}#{n} returns to hangar',
+  'log.heldFire':           '{color} held fire',
+  'log.drewMissile':        '{color} drew {kind} missile',
+  'log.gotRadar':           '{color} got a radar (now {n})',
+  'log.libraryEmpty':       'Library has no questions loaded — no effect',
+  'log.qaCorrect':          '{color} answered correctly — drawing reward',
+  'log.qaWrong':            '{color} answered wrong — drawing punishment',
+  'log.drewReward':         '{color} drew reward: {kind}',
+  'log.willReroll':         '{color} will reroll & advance',
+  'log.drewPunishment':     '{color} drew punishment: {kind}',
+  'log.retreats':           '{color} retreats {n}',
+  'log.willSkip':           '{color} will skip a round',
+  'log.enemySkip':          '{color} forces {target} to skip a round',
+  'log.armFire':            '{attacker} fires ARM at {defender} radar — rolled {n}',
+  'log.armSuccess':         'ARM success — {color} loses a radar (now {n})',
+  'log.armMiss':            'ARM missed',
+  'log.cruiseShielded':     '{color} shielded the cruise missile',
+  'log.cruiseTakeoffHit':   'Cruise auto-hits {color}#{n} on takeoff — returns to hangar',
+  'log.cruiseLandingRoll':  'Cruise vs landing strip — rolled {n}',
+  'log.cruiseHit':          'Cruise hit — {color}#{n} returns to hangar',
+  'log.cruiseMiss':         'Cruise missed',
+  'log.drewCard':           '{color} drew a card',
+  'log.gameOver':           'Game over — winners: {list}',
+  'log.engineError':        'engine error: {msg}',
 
   // Combat / QA
   'combat.title':           'Combat',
@@ -287,6 +391,32 @@ function format(template: string, params?: Record<string, string | number>): str
 export function translate(locale: Locale, key: string, params?: Record<string, string | number>): string {
   const tpl = DICTS[locale][key] ?? DICTS.en[key] ?? key;
   return format(tpl, params);
+}
+
+/**
+ * Render a log line. Server-emitted lines are encoded as `i18n:<json>` where
+ * <json> = {"k":"<key>","p":{...}}. Color-bearing fields in `p` are looked up
+ * via `color.<value>` first so `red` becomes "红方" / "Red" in the active
+ * locale. Unrecognised lines (legacy / debug strings) pass through verbatim.
+ */
+const COLOR_PARAM_FIELDS = ['color', 'enemy', 'attacker', 'defender', 'target'];
+export function renderLogLine(locale: Locale, line: string): string {
+  if (!line.startsWith('i18n:')) return line;
+  try {
+    const obj = JSON.parse(line.slice(5)) as { k: string; p?: Record<string, string | number> };
+    const params: Record<string, string | number> = { ...(obj.p || {}) };
+    for (const f of COLOR_PARAM_FIELDS) {
+      const v = params[f];
+      if (typeof v === 'string') {
+        const colorKey = `color.${v}`;
+        const localized = DICTS[locale][colorKey] ?? DICTS.en[colorKey];
+        if (localized) params[f] = localized;
+      }
+    }
+    return translate(locale, obj.k, params);
+  } catch {
+    return line;
+  }
 }
 
 /** React hook returning a translator bound to the current locale. */

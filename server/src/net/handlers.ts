@@ -13,14 +13,72 @@ import { RoomRegistry, Room } from '../rooms.js';
 import type { EngineCallbacks } from '../game/engine.js';
 import type { QuestionRow } from '@fkzz/shared';
 
+/** Pseudo-room hosting all sockets that are currently watching the lobby
+ *  browser. Anyone in here receives `lobby:list` updates whenever a public
+ *  room is created / joined / left / started / destroyed. */
+const LOBBY_CHANNEL = '__lobby__';
+
+/** How long remaining players wait for the host to come back before the room
+ *  is torn down. Keep in sync with the client-side countdown banner. */
+const HOST_ABANDON_MS = 60_000;
+
 export function bindHandlers(io: Server, registry: RoomRegistry, getQuestions: () => QuestionRow[]) {
+  // Helper: push a fresh public-room snapshot to every lobby watcher.
+  const broadcastLobby = () => {
+    io.to(LOBBY_CHANNEL).emit(S2C.LobbyList, { rooms: registry.listPublicRooms() });
+  };
+
+  // Track per-room abandon timers so we can cancel on host return.
+  const hostAbandonTimers = new Map<string, NodeJS.Timeout>();
+
+  // Disband a room and notify the remaining clients.
+  const disbandRoom = (roomId: string) => {
+    const t = hostAbandonTimers.get(roomId);
+    if (t) { clearTimeout(t); hostAbandonTimers.delete(roomId); }
+    const { socketIds } = registry.disbandRoom(roomId);
+    // Tell every still-connected member the room is gone, then drop them
+    // out of the io room so future broadcasts no longer reach them.
+    for (const sid of socketIds) {
+      const s = io.sockets.sockets.get(sid);
+      if (!s) continue;
+      s.emit(S2C.RoomState, { room: null });
+      s.leave(roomId);
+    }
+    broadcastLobby();
+  };
+
+  // Start (or restart) the host-abandon countdown for a room.
+  const startHostAbandonTimer = (roomId: string) => {
+    const room = registry.getRoom(roomId);
+    if (!room) return;
+    // No-op if no other players are even in the room — the room will GC on its own.
+    const others = room.seats.filter(s => s.player && s.player.id !== room.hostId);
+    if (others.length === 0) return;
+    const existing = hostAbandonTimers.get(roomId);
+    if (existing) clearTimeout(existing);
+    registry.markHostAbandoned(roomId);
+    broadcastRoom(io, registry, roomId);
+    const t = setTimeout(() => {
+      hostAbandonTimers.delete(roomId);
+      disbandRoom(roomId);
+    }, HOST_ABANDON_MS);
+    hostAbandonTimers.set(roomId, t);
+  };
+
+  // Cancel the countdown — host has returned.
+  const clearHostAbandonTimer = (roomId: string) => {
+    const t = hostAbandonTimers.get(roomId);
+    if (t) { clearTimeout(t); hostAbandonTimers.delete(roomId); }
+    registry.clearHostAbandoned(roomId);
+  };
+
   io.on('connection', (socket: Socket) => {
     socket.emit(S2C.Welcome, { playerId: '' });
 
     socket.on(C2S.SessionResume, (raw: unknown) => {
       const parsed = SessionResumeZ.safeParse(raw);
       if (!parsed.success) return sendErr(socket, 'BAD_PAYLOAD', parsed.error.message);
-      const player = registry.resumeSession(parsed.data.playerId, socket.id, parsed.data.nickname);
+      const player = registry.resumeSession(parsed.data.playerId, socket.id, parsed.data.nickname, parsed.data.avatar);
       if (!player) {
         socket.emit(S2C.Welcome, { playerId: '' });
         return sendErr(socket, 'NO_SESSION', 'session expired, please rejoin');
@@ -29,35 +87,58 @@ export function bindHandlers(io: Server, registry: RoomRegistry, getQuestions: (
       const room = registry.roomOfPlayer(player.id);
       if (!room) { socket.emit(S2C.RoomState, { room: null }); return; }
       socket.join(room.id);
+      // Host coming back from a refresh / reconnect cancels the abandon timer.
+      if (room.hostId === player.id && room.hostAbandonedAt) {
+        clearHostAbandonTimer(room.id);
+      }
       broadcastRoom(io, registry, room.id);
+      // Replay persisted log + chat so the rejoining client's panel is restored.
+      socket.emit(S2C.History, { log: [...room.logLines], chat: [...room.chatLines] });
       if (room.engine) {
         socket.emit(S2C.Board, { board: room.engine.boardSnapshot() });
         socket.emit(S2C.GameState, { state: room.engine.state });
       }
     });
 
+    socket.on(C2S.LobbySubscribe, () => {
+      socket.join(LOBBY_CHANNEL);
+      socket.emit(S2C.LobbyList, { rooms: registry.listPublicRooms() });
+    });
+    socket.on(C2S.LobbyUnsubscribe, () => {
+      socket.leave(LOBBY_CHANNEL);
+    });
+
     socket.on(C2S.LobbyCreate, (raw: unknown) => {
       const parsed = LobbyCreateZ.safeParse(raw);
       if (!parsed.success) return sendErr(socket, 'BAD_PAYLOAD', parsed.error.message);
-      const player = registry.attachSocket(socket.id, parsed.data.nickname);
-      const room = registry.createRoom(player.id);
+      const player = registry.attachSocket(socket.id, parsed.data.nickname, parsed.data.avatar);
+      const room = registry.createRoom(player.id, !!parsed.data.isPrivate);
       registry.joinRoom(room.id, player);
       registry.claimSeat(room.id, player, 'red');
       socket.join(room.id);
+      // Creator should leave the lobby browser channel — they're now in a room.
+      socket.leave(LOBBY_CHANNEL);
       socket.emit(S2C.Welcome, { playerId: player.id });
       broadcastRoom(io, registry, room.id);
+      broadcastLobby();
     });
 
     socket.on(C2S.LobbyJoin, (raw: unknown) => {
       const parsed = LobbyJoinZ.safeParse(raw);
       if (!parsed.success) return sendErr(socket, 'BAD_PAYLOAD', parsed.error.message);
-      const { roomId, nickname } = parsed.data;
-      const player = registry.attachSocket(socket.id, nickname);
+      const { roomId, nickname, avatar } = parsed.data;
+      const player = registry.attachSocket(socket.id, nickname, avatar);
       const room = registry.joinRoom(roomId, player);
       if (!room) return sendErr(socket, 'NO_ROOM', `room ${roomId} not found or full`);
       socket.join(room.id);
+      socket.leave(LOBBY_CHANNEL);
+      // If the original host is rejoining via room code, cancel the disband timer.
+      if (room.hostId === player.id && room.hostAbandonedAt) {
+        clearHostAbandonTimer(room.id);
+      }
       socket.emit(S2C.Welcome, { playerId: player.id });
       broadcastRoom(io, registry, room.id);
+      broadcastLobby();
     });
 
     socket.on(C2S.RoomClaimSeat, (raw: unknown) => {
@@ -105,6 +186,8 @@ export function bindHandlers(io: Server, registry: RoomRegistry, getQuestions: (
       io.to(room.id).emit(S2C.Board, { board });
       broadcastRoom(io, registry, room.id);
       cb.onState(room.engine!.state);
+      // Game now in progress — drop this room from the public lobby list.
+      broadcastLobby();
     });
 
     socket.on(C2S.RoomRestart, () => {
@@ -181,9 +264,11 @@ export function bindHandlers(io: Server, registry: RoomRegistry, getQuestions: (
       if (!player) return;
       const room = registry.roomOfPlayer(player.id);
       if (!room) return;
-      io.to(room.id).emit(S2C.Chat, {
+      const line = {
         from: player.id, nickname: player.nickname, message: parsed.data.message, ts: Date.now(),
-      });
+      };
+      registry.appendChat(room.id, line);
+      io.to(room.id).emit(S2C.Chat, line);
     });
 
     socket.on(C2S.RoomLeave, () => {
@@ -191,18 +276,34 @@ export function bindHandlers(io: Server, registry: RoomRegistry, getQuestions: (
       if (!player) return;
       const room = registry.roomOfPlayer(player.id);
       if (!room) return;
+      const wasHost = room.hostId === player.id;
+      const roomId = room.id;
       registry.leaveRoom(player.id);
-      socket.leave(room.id);
-      broadcastRoom(io, registry, room.id);
+      socket.leave(roomId);
+      // Host explicitly leaving — kick off the disband countdown for the remaining players.
+      if (wasHost && registry.getRoom(roomId)) {
+        startHostAbandonTimer(roomId);
+      }
+      broadcastRoom(io, registry, roomId);
+      broadcastLobby();
     });
 
     socket.on('disconnect', () => {
-      registry.detachSocket(socket.id);
       const player = registry.playerBySocket(socket.id);
-      if (player) {
-        const room = registry.roomOfPlayer(player.id);
-        if (room) broadcastRoom(io, registry, room.id);
+      const room = player ? registry.roomOfPlayer(player.id) : undefined;
+      const wasHost = !!(room && player && room.hostId === player.id);
+      const roomId = room?.id;
+      registry.detachSocket(socket.id);
+      if (roomId) {
+        // Host's socket dropped — start the abandon countdown immediately.
+        // (If the host reconnects via SessionResume within 60s, the timer is cleared.)
+        if (wasHost && !registry.isHostPresent(roomId)) {
+          startHostAbandonTimer(roomId);
+        }
+        broadcastRoom(io, registry, roomId);
       }
+      // A disconnect can change seat-counts in lobby-listed rooms.
+      broadcastLobby();
     });
   });
 }
@@ -228,6 +329,11 @@ function broadcastRoom(io: Server, registry: RoomRegistry, roomId: string) {
 }
 
 function makeCallbacks(io: Server, registry: RoomRegistry, roomId: string): EngineCallbacks {
+  // Persist + broadcast a log line so it survives reconnects.
+  const pushLog = (line: string) => {
+    registry.appendLog(roomId, line);
+    io.to(roomId).emit(S2C.EventLog, { line });
+  };
   return {
     onState(state: GameState) {
       io.to(roomId).emit(S2C.GameState, { state });
@@ -243,17 +349,13 @@ function makeCallbacks(io: Server, registry: RoomRegistry, roomId: string): Engi
             seat: ev.seat, cardType: ev.card.type, cardKind: (ev.card as any).kind,
           });
         }
-        io.to(roomId).emit(S2C.EventLog, {
-          line: 'i18n:' + JSON.stringify({ k: 'log.drewCard', p: { color: ev.seat } }),
-        });
+        pushLog('i18n:' + JSON.stringify({ k: 'log.drewCard', p: { color: ev.seat } }));
       } else if (ev.kind === 'log') {
-        io.to(roomId).emit(S2C.EventLog, { line: ev.line });
+        pushLog(ev.line);
       }
     },
     onGameOver(winners) {
-      io.to(roomId).emit(S2C.EventLog, {
-        line: 'i18n:' + JSON.stringify({ k: 'log.gameOver', p: { list: winners.join(', ') } }),
-      });
+      pushLog('i18n:' + JSON.stringify({ k: 'log.gameOver', p: { list: winners.join(', ') } }));
     },
   };
 }

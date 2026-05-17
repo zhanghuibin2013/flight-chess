@@ -102,36 +102,72 @@ export default function Board() {
           );
         })}
 
-      {/* Radar-zone highlight for ALL colors (visible to every player). */}
+      {/* Radar-zone highlight for ALL colors: concentric arcs centered at the
+          color's takeoff (the "radar source"). Each protected cell gets a fat
+          arc segment at radius = distance(takeoff → cell); since the radar
+          zone is sorted by distance from base, adjacent cells render as a
+          fan of concentric rings emanating from each base. */}
       {radarOverlays.map(({ color, cellId }) => {
         const cell = board.cells.find(c => c.id === cellId);
         if (!cell) return null;
-        const r = rotateView({ x: cell.x, y: cell.y }, k);
-        const x = r.x * SIZE;
-        const y = r.y * SIZE;
-        const side = 36;
+        const takeoffId = board.paths[color].takeoff;
+        const takeoffCell = board.cells.find(c => c.id === takeoffId);
+        if (!takeoffCell) return null;
+
+        const center = rotateView({ x: takeoffCell.x, y: takeoffCell.y }, k);
+        const target = rotateView({ x: cell.x, y: cell.y }, k);
+        const cx = center.x * SIZE;
+        const cy = center.y * SIZE;
+        const tx = target.x * SIZE;
+        const ty = target.y * SIZE;
+        const dx = tx - cx;
+        const dy = ty - cy;
+        const radius = Math.hypot(dx, dy);
+        if (radius < 1) return null; // skip the takeoff itself
+
+        const theta = Math.atan2(dy, dx);
+        // Angular half-span so the arc visually covers ~one cell width at this radius.
+        const halfCell = 18;
+        const halfSpan = Math.min(Math.PI / 6, Math.asin(Math.min(1, halfCell / radius)));
+        const x0 = cx + radius * Math.cos(theta - halfSpan);
+        const y0 = cy + radius * Math.sin(theta - halfSpan);
+        const x1 = cx + radius * Math.cos(theta + halfSpan);
+        const y1 = cy + radius * Math.sin(theta + halfSpan);
+
         const isMine = color === mySeat;
         return (
-          <rect
-            key={`radar-${color}-${cellId}`}
-            x={x - side / 2}
-            y={y - side / 2}
-            width={side}
-            height={side}
-            rx={5}
-            fill={COLOR_FILL[color]}
-            opacity={isMine ? 0.28 : 0.18}
-            stroke={COLOR_STROKE[color]}
-            strokeWidth={isMine ? 2 : 1.5}
-            strokeDasharray="4 3"
-            pointerEvents="none"
-          />
+          <g key={`radar-${color}-${cellId}`} pointerEvents="none">
+            {/* Soft "halo" backing for richer contrast against board cells. */}
+            <path
+              d={`M ${x0} ${y0} A ${radius} ${radius} 0 0 1 ${x1} ${y1}`}
+              stroke={COLOR_FILL[color]}
+              strokeWidth={isMine ? 18 : 16}
+              strokeOpacity={isMine ? 0.30 : 0.20}
+              strokeLinecap="round"
+              fill="none"
+            />
+            {/* Foreground arc with the color's outline tone. */}
+            <path
+              d={`M ${x0} ${y0} A ${radius} ${radius} 0 0 1 ${x1} ${y1}`}
+              stroke={COLOR_STROKE[color]}
+              strokeWidth={isMine ? 3 : 2}
+              strokeOpacity={isMine ? 0.85 : 0.65}
+              strokeDasharray="5 4"
+              strokeLinecap="round"
+              fill="none"
+            />
+          </g>
         );
       })}
 
       {/* Hangars */}
       {(['red','yellow','blue','green'] as Color[]).map(c => (
         <HangarBox key={c} color={c} k={k} />
+      ))}
+
+      {/* Per-color player nameplate (avatar + nickname) above the hangar. */}
+      {(['red','yellow','blue','green'] as Color[]).map(c => (
+        <PlayerBadge key={`pb-${c}`} color={c} k={k} />
       ))}
 
       {/* Per-color arsenal badges (visible to everyone), placed next to each hangar */}
@@ -174,7 +210,7 @@ function CellNode({ cell, k }: { cell: Cell; k: number }) {
   let icon: string | null = null;
   let iconSize = 14;
   let iconDy = 5;
-  if (cell.kind === 'missileFactory') icon = '✈';
+  if (cell.kind === 'missileFactory') { icon = '💣'; iconSize = 17; iconDy = 6; }
   else if (cell.kind === 'radarFactory') icon = '📡';
   else if (cell.kind === 'library') icon = '?';
   else if (cell.kind === 'shortcutEntry') { icon = '🚀'; iconSize = 18; iconDy = 6; }
@@ -295,6 +331,85 @@ function ArsenalBadge({ color, k }: { color: Color; k: number }) {
         fontWeight={700}
       >
         📡{hand.radars} 🛩{hand.missiles.length}
+      </text>
+    </g>
+  );
+}
+
+// Canonical anchor (red's base) for the player nameplate. The arsenal badge
+// lives in the BOTTOM outer-margin near the left corner; we place the
+// nameplate in the perpendicular LEFT outer-margin near the bottom corner so
+// the two form an L-shape around each color's hangar without ever
+// overlapping. Critical: the offset must be along a DIFFERENT axis from the
+// arsenal's offset, otherwise rotation (yellow/green) collapses them onto
+// the same line.
+const CANONICAL_PLAYER_BADGE: { x: number; y: number } = { x: -0.07, y: 0.95 };
+
+function PlayerBadge({ color, k }: { color: Color; k: number }) {
+  const room = useStore(s => s.room);
+  if (!room) return null;
+  const seat = room.seats.find(s => s.color === color);
+  // Don't render an empty placeholder for unfilled seats.
+  if (!seat?.player) return null;
+  const player = seat.player;
+
+  const anchorServer = rotateColorAnchor(CANONICAL_PLAYER_BADGE, COLOR_ROT_SERVER[color]);
+  const r = rotateView(anchorServer, k);
+  const cx = r.x * SIZE;
+  const cy = r.y * SIZE;
+
+  // Truncate long nicknames so the badge stays compact and fits within
+  // the 90-px outer margin (same constraint applies in every rotation).
+  const fullName = player.nickname || '';
+  const name = fullName.length > 7 ? fullName.slice(0, 6) + '…' : fullName;
+  const avatar = player.avatar || '✈️';
+  const offline = !player.connected;
+
+  // Width capped at 78 so it fits the 90-px outer margin in every rotation
+  // (with a small safety gap from the viewBox edge).
+  const w = Math.min(78, Math.max(64, 28 + name.length * 9));
+  const h = 22;
+
+  return (
+    <g pointerEvents="none">
+      <rect
+        x={cx - w / 2}
+        y={cy - h / 2}
+        width={w}
+        height={h}
+        rx={5}
+        fill="#ffffff"
+        opacity={offline ? 0.7 : 0.96}
+        stroke={COLOR_STROKE[color]}
+        strokeWidth={1.5}
+      />
+      {/* Avatar circle on the left. */}
+      <circle
+        cx={cx - w / 2 + 12}
+        cy={cy}
+        r={8}
+        fill={COLOR_FILL[color]}
+        opacity={0.25}
+        stroke={COLOR_STROKE[color]}
+        strokeWidth={1.2}
+      />
+      <text
+        x={cx - w / 2 + 12}
+        y={cy + 4}
+        textAnchor="middle"
+        fontSize="12"
+      >
+        {avatar}
+      </text>
+      {/* Nickname. */}
+      <text
+        x={cx - w / 2 + 24}
+        y={cy + 4}
+        fontSize="11"
+        fill={COLOR_STROKE[color]}
+        fontWeight={700}
+      >
+        {name}{offline ? ' ⚠' : ''}
       </text>
     </g>
   );

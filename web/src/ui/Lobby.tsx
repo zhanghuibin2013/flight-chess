@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../state/store';
 import { useT } from '../i18n';
 
@@ -15,13 +15,23 @@ function loadStoredAvatar(): string {
 }
 
 export default function Lobby() {
-  const { nickname, setNickname, createRoom, joinRoom } = useStore();
+  const {
+    nickname, setNickname, createRoom, joinRoom,
+    publicRooms, subscribeLobby, unsubscribeLobby,
+  } = useStore();
   const t = useT();
   const [name, setName] = useState(nickname);
   const [avatar, setAvatar] = useState<string>(() => loadStoredAvatar());
   const [roomId, setRoomId] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
 
   const initial = useMemo(() => (name.trim() ? name.trim()[0]!.toUpperCase() : ''), [name]);
+
+  // Subscribe to the public-room browser as long as we're on the lobby screen.
+  useEffect(() => {
+    subscribeLobby();
+    return () => { unsubscribeLobby(); };
+  }, [subscribeLobby, unsubscribeLobby]);
 
   const persistAvatar = (a: string) => {
     setAvatar(a);
@@ -31,12 +41,17 @@ export default function Lobby() {
   const onCreate = () => {
     if (!name.trim()) return;
     setNickname(name.trim());
-    createRoom(name.trim());
+    createRoom(name.trim(), isPrivate, avatar);
   };
   const onJoin = () => {
     if (!name.trim() || !roomId.trim()) return;
     setNickname(name.trim());
-    joinRoom(roomId.trim(), name.trim());
+    joinRoom(roomId.trim(), name.trim(), avatar);
+  };
+  const onJoinPublic = (rid: string) => {
+    if (!name.trim()) return;
+    setNickname(name.trim());
+    joinRoom(rid, name.trim(), avatar);
   };
 
   return (
@@ -84,6 +99,15 @@ export default function Lobby() {
           <div className="card lobby-mode">
             <div className="card-title">{t('lobby.create')}</div>
             <p className="mode-desc">{t('lobby.createDesc')}</p>
+            <label className="lobby-private-row">
+              <input
+                type="checkbox"
+                checked={isPrivate}
+                onChange={e => setIsPrivate(e.target.checked)}
+              />
+              <span>{t('lobby.private')}</span>
+            </label>
+            <p className="lobby-private-hint">{t('lobby.privateHint')}</p>
             <button className="primary" onClick={onCreate} disabled={!name.trim()}>
               {t('lobby.create')}
             </button>
@@ -107,6 +131,38 @@ export default function Lobby() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Public rooms browser — full-width below the two-column area. */}
+      <div className="card lobby-public">
+        <div className="lobby-public-head">
+          <span className="card-title">{t('lobby.publicRooms')}</span>
+          <button className="lobby-refresh" onClick={subscribeLobby} aria-label={t('lobby.refresh')}>
+            ⟳ {t('lobby.refresh')}
+          </button>
+        </div>
+        {publicRooms.length === 0 ? (
+          <p className="lobby-public-empty">{t('lobby.publicRoomsEmpty')}</p>
+        ) : (
+          <ul className="lobby-public-list">
+            {publicRooms.map(r => (
+              <li key={r.id} className="lobby-public-item">
+                <div className="lobby-public-meta">
+                  <span className="lobby-public-id">#{r.id}</span>
+                  <span className="lobby-public-host">{t('lobby.host')}: {r.hostNickname}</span>
+                  <span className="lobby-public-count">{t('lobby.seats')}: {r.seated}/{r.capacity}</span>
+                </div>
+                <button
+                  className="primary"
+                  onClick={() => onJoinPublic(r.id)}
+                  disabled={!name.trim() || r.seated >= r.capacity}
+                >
+                  {t('lobby.publicJoinBtn')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );

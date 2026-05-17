@@ -104,6 +104,8 @@ export interface PlayerPublic {
   color: Color;
   connected: boolean;
   isBot: boolean;
+  /** Optional avatar emoji selected in the lobby. Visible to everyone. */
+  avatar?: string;
 }
 
 export interface PlayerHand {
@@ -175,6 +177,9 @@ export interface RoomPublic {
   inGame: boolean;
   /** Private rooms are joinable only via direct room code, never via lobby browse. */
   private: boolean;
+  /** Unix ms when the host left/disconnected. While set, the room shows a
+   *  countdown to disband; cleared as soon as the host returns. */
+  hostAbandonedAt?: number;
 }
 
 /** Compact summary used by the lobby browser. */

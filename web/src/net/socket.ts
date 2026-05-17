@@ -3,6 +3,7 @@ import { C2S } from '@fkzz/shared';
 
 const PLAYER_ID_KEY = 'fkzz.playerId';
 const NICKNAME_KEY  = 'fkzz.nickname';
+const AVATAR_KEY    = 'fkzz.avatar';
 
 let socket: Socket | null = null;
 
@@ -27,7 +28,8 @@ export function getSocket(): Socket {
     const pid = getStoredPlayerId();
     if (pid) {
       const nickname = localStorage.getItem(NICKNAME_KEY) ?? undefined;
-      socket!.emit(C2S.SessionResume, { playerId: pid, nickname });
+      const avatar = localStorage.getItem(AVATAR_KEY) ?? undefined;
+      socket!.emit(C2S.SessionResume, { playerId: pid, nickname, avatar });
     }
   });
 

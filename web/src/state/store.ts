@@ -3,10 +3,11 @@
 
 import { create } from 'zustand';
 import type {
-  RoomPublic, GameState, BoardSnapshot, Color, Prompt, GameOptions,
+  RoomPublic, GameState, BoardSnapshot, Color, Prompt, GameOptions, PublicRoomSummary,
 } from '@fkzz/shared';
 import { getSocket, setStoredPlayerId, getStoredPlayerId } from '../net/socket';
 import { C2S, S2C } from '@fkzz/shared';
+import { translate } from '../i18n';
 
 export type Screen = 'lobby' | 'room' | 'game';
 
@@ -24,6 +25,9 @@ interface Store {
   myCardEvents: { cardType: string; cardKind?: string; ts: number }[];
   lastError: string | null;
 
+  /** Public-room browser entries (only valid while subscribed via lobby:subscribe). */
+  publicRooms: PublicRoomSummary[];
+
   /** UI language. Persisted in localStorage. Default 'zh'. */
   locale: 'zh' | 'en';
   setLocale(l: 'zh' | 'en'): void;
@@ -32,8 +36,8 @@ interface Store {
   setHoverPlane(idx: number | null): void;
 
   setNickname(n: string): void;
-  createRoom(nickname: string): void;
-  joinRoom(roomId: string, nickname: string): void;
+  createRoom(nickname: string, isPrivate?: boolean, avatar?: string): void;
+  joinRoom(roomId: string, nickname: string, avatar?: string): void;
   leaveRoom(): void;
   claimSeat(color: Color): void;
   setReady(ready: boolean): void;
@@ -48,6 +52,10 @@ interface Store {
   qaAnswer(questionId: string, answerIndex: number): void;
   playCard(cardId: string, opts?: { targetColor?: Color; targetPlaneIndex?: number; targetRadarIndex?: number }): void;
   chatSay(message: string): void;
+
+  /** Lobby-browser pub/sub. */
+  subscribeLobby(): void;
+  unsubscribeLobby(): void;
 
   mySeat(): Color | null;
   isMyTurn(): boolean;
@@ -83,10 +91,23 @@ export const useStore = create<Store>((set, get) => {
     }
   });
   sock.on(S2C.RoomState, ({ room }) => {
+    const prev = get().room;
     set({ room });
     if (room && get().screen === 'lobby') set({ screen: room.inGame ? 'game' : 'room' });
     if (room?.inGame && get().screen === 'room') set({ screen: 'game' });
-    if (!room) set({ screen: 'lobby' });
+    if (!room) {
+      // If the server forcibly tore the room down (e.g. host abandon timeout),
+      // surface a one-shot toast so the player understands why they were ejected.
+      if (prev) {
+        const msg = translate(get().locale, 'room.disbanded');
+        set({ lastError: msg });
+        window.setTimeout(() => {
+          // Only clear if nothing newer has been set in the meantime.
+          if (get().lastError === msg) set({ lastError: null });
+        }, 5000);
+      }
+      set({ screen: 'lobby' });
+    }
   });
   sock.on(S2C.GameState, ({ state }) => {
     if (!state) {
@@ -147,7 +168,13 @@ export const useStore = create<Store>((set, get) => {
     set(s => ({ myCardEvents: [...s.myCardEvents.slice(-50), { cardType: ev.cardType, cardKind: ev.cardKind, ts: Date.now() }] }));
   });
   sock.on(S2C.Chat, (line) => set(s => ({ chat: [...s.chat.slice(-200), line] })));
+  // Server replays full log + chat after a session resume / reconnect so the
+  // panel rehydrates after a page refresh.
+  sock.on(S2C.History, ({ log, chat }: { log: string[]; chat: ChatLine[] }) => {
+    set({ log: log.slice(-200), chat: chat.slice(-200) });
+  });
   sock.on(S2C.Error, ({ code, message }) => set({ lastError: `${code}: ${message}` }));
+  sock.on(S2C.LobbyList, ({ rooms }) => set({ publicRooms: rooms }));
 
   return {
     playerId: getStoredPlayerId() ?? '',
@@ -160,6 +187,7 @@ export const useStore = create<Store>((set, get) => {
     chat: [],
     myCardEvents: [],
     lastError: null,
+    publicRooms: [],
     locale: ((): 'zh' | 'en' => {
       const v = (typeof localStorage !== 'undefined') ? localStorage.getItem('fkzz.locale') : null;
       return v === 'en' || v === 'zh' ? v : 'zh';
@@ -175,8 +203,8 @@ export const useStore = create<Store>((set, get) => {
       localStorage.setItem('fkzz.nickname', n);
       set({ nickname: n });
     },
-    createRoom(nickname) { sock.emit(C2S.LobbyCreate, { nickname }); },
-    joinRoom(roomId, nickname) { sock.emit(C2S.LobbyJoin, { roomId: roomId.toUpperCase(), nickname }); },
+    createRoom(nickname, isPrivate, avatar) { sock.emit(C2S.LobbyCreate, { nickname, isPrivate: !!isPrivate, avatar }); },
+    joinRoom(roomId, nickname, avatar) { sock.emit(C2S.LobbyJoin, { roomId: roomId.toUpperCase(), nickname, avatar }); },
     leaveRoom() {
       sock.emit(C2S.RoomLeave);
       setStoredPlayerId(null);
@@ -194,6 +222,9 @@ export const useStore = create<Store>((set, get) => {
     qaAnswer(questionId, answerIndex) { sock.emit(C2S.QAAnswer, { questionId, answerIndex }); },
     playCard(cardId, opts) { sock.emit(C2S.CardPlay, { cardId, ...opts }); },
     chatSay(message) { sock.emit(C2S.ChatSay, { message }); },
+
+    subscribeLobby() { sock.emit(C2S.LobbySubscribe); },
+    unsubscribeLobby() { sock.emit(C2S.LobbyUnsubscribe); },
 
     mySeat() {
       const room = get().room;

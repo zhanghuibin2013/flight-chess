@@ -3,6 +3,7 @@
 import { nanoid } from 'nanoid';
 import type {
   Color, GameOptions, PlayerPublic, RoomPublic, QuestionRow, PublicRoomSummary,
+  ChatPayload,
 } from '@fkzz/shared';
 import { COLORS } from '@fkzz/shared';
 import { GameEngine, EngineCallbacks } from './game/engine.js';
@@ -13,6 +14,9 @@ export interface Player {
   nickname: string;
   connected: boolean;
   isBot: boolean;
+  /** Optional avatar emoji chosen in the lobby. Used to render player
+   *  badges next to each base on the board. */
+  avatar?: string;
 }
 
 export interface Seat {
@@ -29,7 +33,21 @@ export interface Room {
   engine?: GameEngine;
   /** Private rooms are joinable only by direct room-code entry; never browsed. */
   isPrivate: boolean;
+  /** Unix ms when the host stopped being present (explicit leave or socket
+   *  disconnect). While set, the room is in a "host-abandoned" countdown
+   *  state. Cleared as soon as the host returns. The actual disband timer
+   *  lives in the handlers layer (it owns the io reference). */
+  hostAbandonedAt?: number;
+  /** Persisted server-side log lines so a client refreshing / reconnecting
+   *  can rehydrate the chat panel. Capped at HISTORY_LIMIT entries. */
+  logLines: string[];
+  /** Persisted server-side chat messages. Capped at HISTORY_LIMIT entries. */
+  chatLines: ChatPayload[];
 }
+
+/** Cap for persisted log/chat history per room. Mirrors the client-side
+ *  trimming so the server never sends more than the client would keep. */
+const HISTORY_LIMIT = 200;
 
 const DEFAULT_OPTIONS: GameOptions = {
   takeoffNumbers: [2, 4, 6],
@@ -45,7 +63,7 @@ export class RoomRegistry {
   private playerToRoom = new Map<string, string>();
 
   /** Resolve a player by socket. Creates an anonymous record if none. */
-  attachSocket(socketId: string, nickname: string): Player {
+  attachSocket(socketId: string, nickname: string, avatar?: string): Player {
     const existingPid = this.socketToPlayer.get(socketId);
     const existing = existingPid ? this.players.get(existingPid) : undefined;
     const player: Player = existing ?? {
@@ -55,6 +73,7 @@ export class RoomRegistry {
     player.socketId = socketId;
     player.connected = true;
     if (nickname) player.nickname = nickname;
+    if (avatar) player.avatar = avatar;
     this.socketToPlayer.set(socketId, player.id);
     return player;
   }
@@ -73,7 +92,7 @@ export class RoomRegistry {
   /** Re-bind an existing player record (by playerId) to a new socket.
    *  Used after the client refreshes / reconnects.
    *  Returns the player on success, or null if the playerId is unknown. */
-  resumeSession(playerId: string, socketId: string, nickname?: string): Player | null {
+  resumeSession(playerId: string, socketId: string, nickname?: string, avatar?: string): Player | null {
     const player = this.players.get(playerId);
     if (!player) return null;
     // Detach previous socket binding if any.
@@ -83,6 +102,7 @@ export class RoomRegistry {
     player.socketId = socketId;
     player.connected = true;
     if (nickname) player.nickname = nickname;
+    if (avatar) player.avatar = avatar;
     this.socketToPlayer.set(socketId, player.id);
     // Re-link seats: the seat object holds the same Player reference,
     // so socketId/connected updates above are already visible there.
@@ -107,6 +127,8 @@ export class RoomRegistry {
       seats: COLORS.map(c => ({ color: c, ready: false })),
       options: { ...DEFAULT_OPTIONS },
       isPrivate,
+      logLines: [],
+      chatLines: [],
     };
     this.rooms.set(id, room);
     return room;
@@ -217,6 +239,47 @@ export class RoomRegistry {
     }
   }
 
+  /** Mark the room as host-abandoned (handlers manages the actual timer). */
+  markHostAbandoned(roomId: string, ts = Date.now()): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    room.hostAbandonedAt = ts;
+  }
+
+  /** Clear the host-abandoned flag once the host has rejoined. */
+  clearHostAbandoned(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    room.hostAbandonedAt = undefined;
+  }
+
+  /** Whether the host currently occupies a seat AND has a live socket.
+   *  Used to decide whether to start an abandon timer. */
+  isHostPresent(roomId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const seat = room.seats.find(s => s.player?.id === room.hostId);
+    return !!seat && !!seat.player?.connected;
+  }
+
+  /** Tear down a room: collect lingering socket ids for the caller to push
+   *  a final RoomState=null, then unlink everyone and drop the room. */
+  disbandRoom(roomId: string): { socketIds: string[]; playerIds: string[] } {
+    const room = this.rooms.get(roomId);
+    if (!room) return { socketIds: [], playerIds: [] };
+    const socketIds: string[] = [];
+    const playerIds: string[] = [];
+    for (const seat of room.seats) {
+      if (seat.player) {
+        if (seat.player.socketId) socketIds.push(seat.player.socketId);
+        playerIds.push(seat.player.id);
+        this.playerToRoom.delete(seat.player.id);
+      }
+    }
+    this.rooms.delete(roomId);
+    return { socketIds, playerIds };
+  }
+
   publicRoom(room: Room): RoomPublic {
     return {
       id: room.id,
@@ -229,10 +292,18 @@ export class RoomRegistry {
       options: room.options,
       inGame: !!room.engine,
       private: room.isPrivate,
+      hostAbandonedAt: room.hostAbandonedAt,
     };
   }
   private publicPlayer(p: Player): PlayerPublic {
-    return { id: p.id, nickname: p.nickname, color: 'red' /*overwritten by seat*/, connected: p.connected, isBot: p.isBot };
+    return {
+      id: p.id,
+      nickname: p.nickname,
+      color: 'red' /*overwritten by seat*/,
+      connected: p.connected,
+      isBot: p.isBot,
+      avatar: p.avatar,
+    };
   }
 
   /** Compact list of NON-private rooms for the lobby browser. Excludes rooms
@@ -270,6 +341,26 @@ export class RoomRegistry {
   }
 
   getRoom(roomId: string): Room | undefined { return this.rooms.get(roomId); }
+
+  /** Append a log line to the room's persisted history (trimmed to limit). */
+  appendLog(roomId: string, line: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    room.logLines.push(line);
+    if (room.logLines.length > HISTORY_LIMIT) {
+      room.logLines.splice(0, room.logLines.length - HISTORY_LIMIT);
+    }
+  }
+
+  /** Append a chat message to the room's persisted history (trimmed to limit). */
+  appendChat(roomId: string, line: ChatPayload): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    room.chatLines.push(line);
+    if (room.chatLines.length > HISTORY_LIMIT) {
+      room.chatLines.splice(0, room.chatLines.length - HISTORY_LIMIT);
+    }
+  }
 
     private generateRoomId(): string {
     // Digits only — easier to type / read out loud.

@@ -22,6 +22,11 @@ h1,h2,h3,h4{font-weight:700}
 /* ===== App ===== */
 .app{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px}
 .toast-error{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#d32f2f;color:#fff;padding:10px 24px;border-radius:var(--radius);font-size:14px;z-index:100;animation:fadeIn .2s}
+
+/* Host-abandoned countdown banner — fixed at the top, above all screens. */
+.host-abandon-banner{position:fixed;top:12px;left:50%;transform:translateX(-50%);min-width:320px;max-width:90vw;background:linear-gradient(135deg,#ffb74d 0%,#ff7043 100%);color:#fff;padding:12px 20px;border-radius:var(--radius);box-shadow:0 6px 18px rgba(0,0,0,.18);z-index:200;text-align:center;animation:fadeIn .25s}
+.host-abandon-title{font-size:15px;font-weight:600;margin-bottom:4px}
+.host-abandon-sub{font-size:13px;opacity:.92}
 @keyframes fadeIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
 
 /* ===== Lobby ===== */
@@ -46,6 +51,24 @@ h1,h2,h3,h4{font-weight:700}
 .lobby-mode{flex:1}
 .lobby-mode .mode-desc{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
 .lobby-mode button{align-self:stretch}
+.lobby-private-row{display:flex;align-items:center;gap:8px;font-size:13px;color:#37474f;cursor:pointer;user-select:none}
+.lobby-private-row input[type="checkbox"]{width:16px;height:16px;cursor:pointer;accent-color:#1976d2}
+.lobby-private-hint{margin:-4px 0 0;color:var(--muted);font-size:11px;line-height:1.4}
+
+/* Public rooms browser */
+.lobby-public{width:100%}
+.lobby-public-head{display:flex;justify-content:space-between;align-items:center}
+.lobby-refresh{font-size:12px;background:#eceff1;color:#37474f;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;transition:background .12s}
+.lobby-refresh:hover{background:#cfd8dc}
+.lobby-public-empty{color:var(--muted);font-size:13px;text-align:center;margin:8px 0;padding:16px;background:#f5f7fa;border-radius:8px}
+.lobby-public-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto}
+.lobby-public-item{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 14px;background:#f5f7fa;border:1px solid #e3e7ea;border-radius:10px;transition:all .12s}
+.lobby-public-item:hover{background:#e3f2fd;border-color:#1976d2}
+.lobby-public-meta{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.lobby-public-id{font-family:'Courier New',monospace;font-weight:700;color:#1976d2;font-size:15px}
+.lobby-public-host{font-size:12px;color:#37474f}
+.lobby-public-count{font-size:12px;color:var(--muted)}
+.lobby-public-item button{flex-shrink:0;padding:6px 16px;font-size:13px}
 @media (max-width: 720px){
   .lobby{width:100%}
   .lobby-grid{grid-template-columns:1fr}

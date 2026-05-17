@@ -31,10 +31,13 @@ export const LobbyCreateZ = z.object({
   nickname: z.string().min(1).max(16),
   /** When true, the room won't appear in the public lobby list. Default false. */
   isPrivate: z.boolean().optional(),
+  /** Optional avatar emoji selected in the lobby. */
+  avatar: z.string().min(1).max(8).optional(),
 });
 export const LobbyJoinZ = z.object({
   roomId: z.string().min(4).max(8),
   nickname: z.string().min(1).max(16),
+  avatar: z.string().min(1).max(8).optional(),
 });
 export const RoomClaimSeatZ = z.object({
   color: z.enum(['red','yellow','blue','green'] as const),
@@ -72,6 +75,7 @@ export const ChatSayZ = z.object({ message: z.string().min(1).max(200) });
 export const SessionResumeZ = z.object({
   playerId: z.string().min(1).max(32),
   nickname: z.string().min(1).max(16).optional(),
+  avatar: z.string().min(1).max(8).optional(),
 });
 
 // ====== Server → Client ======
@@ -86,6 +90,8 @@ export const S2C = {
   EventCard:  'event:cardDrawn',
   EventLog:   'event:log',
   Chat:       'chat',
+  /** Replayed log + chat history on session resume / room rejoin. */
+  History:    'room:history',
   Error:      'error',
   LobbyList:  'lobby:list',
 } as const;
@@ -104,5 +110,6 @@ export interface CardDrawnPayload {
 }
 export interface LogPayload       { line: string; }
 export interface ChatPayload      { from: string; nickname: string; message: string; ts: number; }
+export interface HistoryPayload   { log: string[]; chat: ChatPayload[]; }
 export interface ErrorPayload     { code: string; message: string; }
 export interface LobbyListPayload { rooms: PublicRoomSummary[]; }

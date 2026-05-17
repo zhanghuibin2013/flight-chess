@@ -4,6 +4,7 @@ import Lobby from './ui/Lobby';
 import Room from './ui/Room';
 import Game from './ui/Game';
 import LanguageSwitch from './ui/LanguageSwitch';
+import HostAbandonBanner from './ui/HostAbandonBanner';
 
 export default function App() {
   const screen = useStore(s => s.screen);
@@ -11,6 +12,7 @@ export default function App() {
   return (
     <div className="app">
       <LanguageSwitch />
+      <HostAbandonBanner />
       {screen === 'lobby' && <Lobby />}
       {screen === 'room' && <Room />}
       {screen === 'game' && <Game />}

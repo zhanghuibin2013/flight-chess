@@ -30,6 +30,10 @@ function cellIdAt(board: BoardSnapshot, color: Color, progress: number): number 
  *  4) radar factory  5) library (if QA deck non-empty)
  *  6) (takeoff)      7) closest to home (highest progress)
  *
+ *  Note: a hangar plane spending a takeoff dice only moves to the takeoff
+ *  cell (progress=0). It does NOT advance `roll` steps along the ring, so
+ *  it cannot land on missile/radar/library/shortcut/home in one move.
+ *
  *  Returns a translation KEY plus optional params, so the caller can render in
  *  the user's current locale. */
 function recommendPlaneIdx(
@@ -57,31 +61,43 @@ function recommendPlaneIdx(
   type Score = { idx: number; tier: number; progress: number; reasonKey: string; reasonParams?: Record<string, string | number> };
   const scored: Score[] = candidates.map(idx => {
     const plane = state.planes[color][idx]!;
+    const isHangar = plane.state === 'hangar';
     const fromProgress = plane.progress ?? 0;
-    // Bounce-back when overshoot.
-    let target = fromProgress + roll;
-    let bounced = false;
-    if (target > PATH_LEN_TO_HOME) {
-      target = PATH_LEN_TO_HOME - (target - PATH_LEN_TO_HOME);
-      bounced = true;
-    }
-    const reachesHome = !bounced && target >= PATH_LEN_TO_HOME;
-    const destId = cellIdAt(board, color, target);
-    const cell = board.cells.find(c => c.id === destId);
-    const isShortcut = cell?.kind === 'shortcutEntry' && cell?.color === color;
-    const isMissile = cell?.kind === 'missileFactory';
-    const isRadar = cell?.kind === 'radarFactory';
-    const isLibrary = cell?.kind === 'library' && qaAvailable;
 
     let tier = 99;
     let reasonKey = 'reason.closestProgress';
     let reasonParams: Record<string, string | number> | undefined = { p: fromProgress };
-    if (reachesHome) { tier = 1; reasonKey = 'reason.reachesHome'; reasonParams = undefined; }
-    else if (isShortcut) { tier = 2; reasonKey = 'reason.shortcut'; reasonParams = undefined; }
-    else if (isMissile) { tier = 3; reasonKey = 'reason.missileFactory'; reasonParams = undefined; }
-    else if (isRadar) { tier = 4; reasonKey = 'reason.radarFactory'; reasonParams = undefined; }
-    else if (isLibrary) { tier = 5; reasonKey = 'reason.library'; reasonParams = undefined; }
-    else { tier = 7; }
+
+    if (isHangar) {
+      // Hangar plane only travels to the takeoff cell (progress=0); it does
+      // not advance along the ring on this turn. Treat it as a takeoff
+      // action with priority 6.
+      tier = 6;
+      reasonKey = 'reason.takeoffToCell';
+      reasonParams = undefined;
+    } else {
+      // Bounce-back when overshoot.
+      let target = fromProgress + roll;
+      let bounced = false;
+      if (target > PATH_LEN_TO_HOME) {
+        target = PATH_LEN_TO_HOME - (target - PATH_LEN_TO_HOME);
+        bounced = true;
+      }
+      const reachesHome = !bounced && target >= PATH_LEN_TO_HOME;
+      const destId = cellIdAt(board, color, target);
+      const cell = board.cells.find(c => c.id === destId);
+      const isShortcut = cell?.kind === 'shortcutEntry' && cell?.color === color;
+      const isMissile = cell?.kind === 'missileFactory';
+      const isRadar = cell?.kind === 'radarFactory';
+      const isLibrary = cell?.kind === 'library' && qaAvailable;
+
+      if (reachesHome) { tier = 1; reasonKey = 'reason.reachesHome'; reasonParams = undefined; }
+      else if (isShortcut) { tier = 2; reasonKey = 'reason.shortcut'; reasonParams = undefined; }
+      else if (isMissile) { tier = 3; reasonKey = 'reason.missileFactory'; reasonParams = undefined; }
+      else if (isRadar) { tier = 4; reasonKey = 'reason.radarFactory'; reasonParams = undefined; }
+      else if (isLibrary) { tier = 5; reasonKey = 'reason.library'; reasonParams = undefined; }
+      else { tier = 7; }
+    }
 
     return { idx, tier, progress: fromProgress, reasonKey, reasonParams };
   });
@@ -191,6 +207,7 @@ export default function ActionPanel() {
   }, []);
 
   return (
+    <>
     <div className="action-panel">
       <div className="action-header">
         <strong>{t('game.turnLabel', { color: t(COLOR_KEYS[state.turn]) })}</strong>
@@ -261,6 +278,8 @@ export default function ActionPanel() {
         </div>
       )}
 
+    </div>
+    <div className="action-panel">
       <div className="hand">
         <h4>{t('game.arsenal')}</h4>
         <div className="arsenal-summary">
@@ -318,6 +337,7 @@ export default function ActionPanel() {
         ))}
       </div>
     </div>
+    </>
   );
 }
 

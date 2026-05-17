@@ -1,121 +1,275 @@
-# 防空作战飞行棋 / Air Defense Combat Flying Chess (Online)
+# Missile Flying Chess / 导弹飞行棋
 
-A multiplayer online flying chess game with anti-air, air-to-air, anti-radar, and cruise missile combat. Authoritative Node.js + Socket.IO server, React + Vite web client, shared TypeScript protocol.
+A multiplayer online strategy board game featuring air combat mechanics with missiles, radar systems, and tactical gameplay. Built with Node.js, Socket.IO, React, and TypeScript.
 
-## Workspace layout
+## 🎮 Game Overview
+
+Missile Flying Chess is a digital adaptation of the classic flying chess board game, enhanced with modern combat elements including:
+
+- **Air-to-Air Missiles (AAM)**: Engage enemy aircraft in dogfights
+- **Surface-to-Air Missiles (SAM)**: Defend your airspace with radar-guided interception
+- **Anti-Radiation Missiles (ARM)**: Destroy enemy radar systems
+- **Cruise Missiles**: Long-range precision strikes on vulnerable targets
+- **Radar Systems**: Expand detection zones for enhanced defense
+- **Q&A Challenges**: Test your knowledge for rewards and penalties
+
+## 📁 Project Structure
 
 ```
-导弹飞行棋/
-├─ shared/         # @fkzz/shared — domain types + Socket.IO protocol (Zod)
-├─ server/         # @fkzz/server — authoritative game engine (Node + Socket.IO)
-├─ web/            # @fkzz/web    — React 18 + Vite + zustand client
+missile-flying-chess/
+├─ shared/         # @fkzz/shared — Shared TypeScript types & Socket.IO protocol (Zod)
+├─ server/         # @fkzz/server — Authoritative game engine (Node.js + Socket.IO)
+├─ web/            # @fkzz/web    — React 18 + Vite + Zustand client
+├─ docs/           # Game rules and documentation
+│   ├─ 游戏说明.md     # Chinese game manual
+│   └─ 棋盘布局.txt    # Board layout specifications
 └─ data/
-   └─ questions.json   # Q&A bank (you supply this)
+   └─ questions.json   # Q&A question bank
 ```
 
-## Prerequisites
+## ✨ Features
 
-- Node.js ≥ 18 (uses `crypto.randomInt`, `node:http`)
-- npm ≥ 9 (uses workspaces)
+- **Real-time Multiplayer**: 2-4 players compete in real-time via WebSocket
+- **Authoritative Server**: All game logic validated server-side to prevent cheating
+- **Strategic Combat**: Multiple weapon systems with unique mechanics
+- **Dynamic Gameplay**: Random events, Q&A challenges, and reward/penalty cards
+- **Responsive Design**: Modern UI built with React and Tailwind CSS
+- **Cross-platform**: Play on any device with a web browser
 
-## Setup
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js ≥ 18
+- npm ≥ 9
+
+### Installation
 
 ```bash
-npm install        # installs all workspaces
-npm run build      # builds shared → server → web
+# Clone the repository
+git clone <repository-url>
+cd missile-flying-chess
+
+# Install dependencies
+npm install
+
+# Build all packages
+npm run build
 ```
 
-## Run (dev)
+### Development Mode
 
-In two terminals:
+Run the following commands in separate terminals:
 
 ```bash
-# terminal 1 — server (port 3001)
+# Terminal 1: Start the game server (port 3001)
 npm -w @fkzz/server run dev
 
-# terminal 2 — web (port 5173, proxies /socket.io to :3001)
+# Terminal 2: Start the web client (port 5173)
 npm -w @fkzz/web run dev
 ```
 
-Open http://localhost:5173 in two or more browser tabs/windows.
+Open http://localhost:5173 in multiple browser tabs/windows to play with friends.
 
-## Run (production)
+### Production Mode
 
 ```bash
+# Build the project
 npm run build
-npm -w @fkzz/server start    # serves API + static web/dist on :3001
+
+# Start the production server (serves both API and static files on port 3001)
+npm -w @fkzz/server start
 ```
 
-Open http://localhost:3001.
+Visit http://localhost:3001 to play.
 
-## How to play (2–4 players)
+## 🎯 How to Play
 
-1. Each player enters a nickname on the lobby screen.
-2. One player creates a room (6-character code). The others join via the code.
-3. Each player claims a colored seat (red / yellow / blue / green) and clicks **Ready**.
-4. Host clicks **Start Game** when all seated players are ready (≥ 2 players).
-5. Roll dice on your turn; choose plane to take off / move; play held cards from your hand.
-6. First player to land **two** planes at home wins (default victory rule).
+### 1. Lobby Setup
+- Enter your nickname on the lobby screen
+- One player creates a room (generates a 6-character code)
+- Other players join using the room code
+- Each player selects a color seat (Red/Yellow/Blue/Green) and clicks **Ready**
 
-## Q&A bank (`data/questions.json`)
+### 2. Game Start
+- Host clicks **Start Game** when all players are ready (minimum 2 players)
+- Players take turns rolling dice and moving their aircraft
 
-The `library` cell triggers a Q&A challenge. The server reads `data/questions.json` at startup. The default file is empty; supply your own questions in this schema:
+### 3. Core Mechanics
+
+#### Takeoff
+- Roll the required number (configurable: 6 for hard, 5-6 for normal, 2-4-6 for easy)
+- Move aircraft from hangar to takeoff point
+- Rolling a 6 grants an extra turn
+
+#### Movement
+- Aircraft move clockwise around the board based on dice rolls
+- Land on special tiles to trigger events (missile factory, radar factory, library)
+
+#### Jump Mechanic
+- Landing on same-colored tiles triggers automatic jumps to the next matching tile
+- Can only jump once per movement sequence
+
+#### Shortcut Channels
+- Active entry: Fly through shortcut AND trigger jump
+- Passive entry (via jump): Fly through shortcut WITHOUT additional jump
+
+#### Landing Zone
+- Last 4 tiles before finish line are protected (immune to most attacks)
+- Must roll exact number to land; overshoot causes retreat
+
+#### Stacking (Formation)
+- Multiple same-color aircraft on one tile form a formation
+- Special collision rules apply when encountering formations
+
+#### Collisions
+- Opposing aircraft on same tile: Both return to hangar
+- Formation collisions: Attacker and one defender return to hangar
+
+### 4. Weapon Systems
+
+#### Radar Cards
+- Determine防空 identification zone size
+- 0 cards: No SAM usage
+- 1 card: 1-tile zone
+- 3 cards: 3-tile fan zone (radius 2)
+- 5 cards: 5-tile fan zone (radius 3)
+- 7 cards: 7-tile fan zone (radius 3)
+- Even numbers don't expand zone
+
+#### Air-to-Air Missiles (AAM)
+- Trigger when enemy within 4 tiles ahead
+- Both sides roll dice; higher wins
+- Winner sends loser back to hangar
+- Defender can counter-attack if they have AAM cards
+
+#### Surface-to-Air Missiles (SAM)
+- Auto-prompt when enemy enters radar zone
+- Requires at least 1 radar card to use
+
+#### Anti-Radiation Missiles (ARM)
+- Attack enemy radar systems
+- Roll 5 or 6 for successful hit
+- Destroys one enemy radar card
+
+#### Cruise Missiles
+- Attack aircraft at takeoff points or landing zones
+- Takeoff target: Automatic hit
+- Landing zone target: Roll 4-6 for success
+
+### 5. Equipment Acquisition
+
+#### Missile Factory
+- Land on "Missile Factory" tile to draw random missile card
+- Cannot draw during collision states
+
+#### Radar Factory
+- Land on "Radar Factory" tile to gain 1 radar card
+- Cannot draw during collision states
+
+### 6. Q&A System
+
+#### Library Challenge
+- Land on "Library" tile to trigger Q&A
+- Correct answer: Draw reward card
+- Wrong answer: Draw penalty card
+
+#### Reward Cards (30 total)
+- Extra roll & move (×4)
+- Move forward 2/4/6 tiles (×4 each)
+- Gain missile/radar (×4 each)
+- Skip opponent's turn (×4)
+- Block one attack (×2)
+
+#### Penalty Cards (30 total)
+- Extra roll & move backward (×4)
+- Move backward 2/4/6 tiles (×4 each)
+- Return to takeoff (×2)
+- Skip turn (×4)
+- Lose missile/radar (×4 each)
+
+### 7. Victory Conditions
+
+**Mode 1: Race Victory**
+- First player to land 2 aircraft at home wins
+
+**Mode 2: Time-Limited Victory**
+- Set time limit (recommended: 2 hours)
+- Player with most aircraft at finish line wins
+
+## 📝 Q&A Question Bank
+
+The game includes a knowledge quiz system. Customize questions by editing `data/questions.json`:
 
 ```json
 [
   {
     "id": "q-001",
     "prompt": "What does AAM stand for?",
-    "options": ["Air-to-Air Missile", "Anti-Aircraft Missile", "Auto-Aim Module", "Astro-Air Mark"],
+    "options": [
+      "Air-to-Air Missile",
+      "Anti-Aircraft Missile",
+      "Auto-Aim Module",
+      "Astro-Air Mark"
+    ],
     "answerIndex": 0
   }
 ]
 ```
 
-- `id` — unique string
-- `prompt` — question text shown to the player
-- `options` — array of answer choices (typically 4)
-- `answerIndex` — zero-based index of the correct option
+**Fields:**
+- `id`: Unique identifier
+- `prompt`: Question text
+- `options`: Array of answer choices (typically 4)
+- `answerIndex`: Zero-based index of correct answer
 
-Restart the server after editing the file.
+Restart the server after modifying the file.
 
-## Manual test checklist
+## 🛠️ Tech Stack
 
-- [ ] 2 players can create / join a room and see each other's seat.
-- [ ] Take-off only succeeds on the configured numbers (default 6).
-- [ ] Rolling 6 grants another roll; three sixes in a row busts (returns the moved plane to hangar).
-- [ ] Same-color cell triggers a 4-cell jump.
-- [ ] Shortcut entry warps to shortcut exit; chained jump rule applies (per spec §3.2).
-- [ ] Landing on the takeoff cell returns the occupying plane to hangar (collision).
-- [ ] Stacking on a same-color cell allows the new plane to "perch"; rolling 6 advances both.
-- [ ] Missile factory cell draws a missile (AAM/SAM/ARM/Cruise) into your hand.
-- [ ] Radar factory cell adds 1 radar (max 3, zone fan-out 0/1/3/5/7).
-- [ ] Library cell triggers Q&A — correct answer rewards, wrong answer punishes.
-- [ ] AAM duel resolves with counter-attacks (defender d6 ≥ 4 dodges; attacker d6 ≥ 4 hits).
-- [ ] SAM auto-prompts when an enemy enters my radar zone.
-- [ ] ARM (5 or 6) destroys one of target's radars.
-- [ ] Cruise hits a takeoff cell automatically; on landing strip needs 4/5/6.
-- [ ] Cruise on landing strip pierces immunity per spec.
-- [ ] Two planes at home → game over screen with winner.
+| Layer | Technology |
+|-------|-----------|
+| **Protocol** | TypeScript + Zod schema validation |
+| **Server** | Node.js 18, Socket.IO, nanoid, ESM modules |
+| **Game Engine** | Authoritative state machine with structuredClone snapshots |
+| **Client** | React 18, Vite 5, Zustand state management, Socket.IO client |
+| **RNG** | Server-side `crypto.randomInt` (no client randomness) |
+| **Styling** | Plain CSS with responsive design |
 
-## Tech stack
+## 🔒 Security & Design
 
-| Layer    | Tools |
-|----------|-------|
-| Protocol | TypeScript + Zod (`shared/src/protocol.ts`) |
-| Server   | Node 18, `socket.io`, `nanoid`, ESM modules |
-| Engine   | Authoritative state machine in `server/src/game/engine.ts`, snapshots cloned via `structuredClone` |
-| Web      | React 18, Vite 5, `zustand`, `socket.io-client`, plain CSS |
-| RNG      | Server-side `crypto.randomInt` (no client randomness) |
+- **Authoritative Server**: Clients only request actions; server validates all moves against game state
+- **Private Card Draws**: Only the drawing player sees card details; others see generic logs
+- **No Client RNG**: All randomness generated server-side to prevent manipulation
+- **State Snapshots**: Full game state synced to all clients after each action
 
-## Notable design choices
+## 🧪 Testing Checklist
 
-- **Authoritative server**: clients never compute moves; they only request actions. Server validates each action against the current `Phase` and emits `game:state` snapshots.
-- **Card-draw privacy**: when a player draws a card, only that player receives the concrete card kind (`event:cardDrawn`); the rest of the room sees a generic log line.
-- **Same-color jump + shortcut chain**: implemented in `server/src/game/rules.ts` `resolveJumpChain`. A plane that arrived at a shortcut entry via a prior jump traverses the shortcut but does **not** chain another same-color jump on the exit (per game rule §3.2).
-- **Radar zone**: `radarZoneSize(n)` returns 0 / 1 / 3 / 5 / 7 cells (per spec) sorted by distance from the defender's takeoff. SAM is auto-prompted whenever an enemy plane enters or steps inside the zone.
-- **Takeoff numbers**: configurable in room options (`[6]` strict / `[5,6]` / `[2,4,6]` easy).
+- [ ] 2+ players can create/join rooms and see seats
+- [ ] Takeoff only works on configured numbers
+- [ ] Rolling 6 grants extra turn; three 6s = bust
+- [ ] Same-color tiles trigger 4-cell jumps
+- [ ] Shortcut channels work correctly (active vs passive)
+- [ ] Landing on occupied takeoff tile causes collision
+- [ ] Stacking allows perching; rolling 6 advances formation
+- [ ] Missile factory draws random missile card
+- [ ] Radar factory adds radar (max 3, zones: 0/1/3/5/7)
+- [ ] Library triggers Q&A with rewards/penalties
+- [ ] AAM duels resolve with counter-attacks
+- [ ] SAM auto-prompts on radar zone entry
+- [ ] ARM destroys radar on roll 5-6
+- [ ] Cruise missiles hit takeoff automatically; need 4-6 for landing zone
+- [ ] Cruise missiles pierce landing zone immunity
+- [ ] Game ends when 2 aircraft reach home
 
-## License
+## 📄 License
 
 Private project — no license granted.
+
+## 🤝 Contributing
+
+This is a private project. For inquiries, please contact the project maintainer.
+
+---
+
+**Enjoy the game! 🎲✈️💥**

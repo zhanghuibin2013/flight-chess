@@ -1,5 +1,6 @@
 import React from 'react';
 import { useStore } from '../state/store';
+import { useT } from '../i18n';
 import type { Prompt } from '@fkzz/shared';
 
 interface Props {
@@ -8,11 +9,12 @@ interface Props {
 
 export default function CombatModal({ prompt }: Props) {
   const combatRespond = useStore(s => s.combatRespond);
+  const t = useT();
 
   return (
     <div className="modal-overlay">
       <div className="modal combat-modal">
-        <h3>Combat</h3>
+        <h3>{t('combat.title')}</h3>
         <p className="combat-desc">{prompt.description}</p>
         <div className="combat-options">
           {prompt.options.map((opt) => (

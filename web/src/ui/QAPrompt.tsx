@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../state/store';
+import { useT } from '../i18n';
 import type { Prompt } from '@fkzz/shared';
 
 interface Props {
@@ -8,6 +9,7 @@ interface Props {
 
 export default function QAPrompt({ prompt }: Props) {
   const qaAnswer = useStore(s => s.qaAnswer);
+  const t = useT();
   const [selected, setSelected] = useState<number | null>(null);
 
   const submit = () => {
@@ -18,7 +20,7 @@ export default function QAPrompt({ prompt }: Props) {
   return (
     <div className="modal-overlay">
       <div className="modal qa-modal">
-        <h3>Q&amp;A Challenge</h3>
+        <h3>{t('qa.title')}</h3>
         <p className="qa-prompt">{prompt.prompt}</p>
         <ul className="qa-options">
           {prompt.options.map((opt, i) => (
@@ -36,7 +38,7 @@ export default function QAPrompt({ prompt }: Props) {
           ))}
         </ul>
         <button className="primary" disabled={selected === null} onClick={submit}>
-          Submit Answer
+          {t('qa.submit')}
         </button>
       </div>
     </div>

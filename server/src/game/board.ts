@@ -1,4 +1,4 @@
-// Board construction for 防控作战飞行棋.
+// Board construction for 防空作战飞行棋.
 //
 // Layout (per the user spec):
 // - 84-cell outer ring; 4 quadrants of 21 cells each.

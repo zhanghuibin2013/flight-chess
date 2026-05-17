@@ -1,4 +1,4 @@
-# 防控作战飞行棋 / Air Defense Combat Flying Chess (Online)
+# 防空作战飞行棋 / Air Defense Combat Flying Chess (Online)
 
 A multiplayer online flying chess game with anti-air, air-to-air, anti-radar, and cruise missile combat. Authoritative Node.js + Socket.IO server, React + Vite web client, shared TypeScript protocol.
 

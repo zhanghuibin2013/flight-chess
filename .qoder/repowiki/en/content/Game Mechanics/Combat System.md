@@ -26,7 +26,7 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document explains the complex combat system in 防控作战飞行棋 (Air Defense Combat Flying Chess). It covers:
+This document explains the complex combat system in 防空作战飞行棋 (Air Defense Combat Flying Chess). It covers:
 - Air-to-air missile (AAM) duels: dice outcomes, counter-attacks, and tactical decisions
 - Surface-to-air missile (SAM) auto-prompt system: radar zone detection and defensive positioning
 - Anti-radar missile (ARM) targeting: radar destruction and strategic implications

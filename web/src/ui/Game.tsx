@@ -1,5 +1,6 @@
 import React from 'react';
 import { useStore } from '../state/store';
+import { useT } from '../i18n';
 import Board from './Board';
 import Hud from './Hud';
 import LogPanel from './LogPanel';
@@ -12,9 +13,10 @@ export default function Game() {
   const state = useStore(s => s.state);
   const board = useStore(s => s.board);
   const myPrompt = useStore(s => s.myPrompt());
+  const t = useT();
 
   if (!state || !board) {
-    return <div className="loading">Loading game…</div>;
+    return <div className="loading">{t('game.loading')}</div>;
   }
 
   return (

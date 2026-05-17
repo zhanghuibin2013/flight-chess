@@ -1,13 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../state/store';
+import { useT, translate, type Locale } from '../i18n';
 import type { Color, MissileKind, BoardSnapshot, GameState } from '@fkzz/shared';
 
 const MISSILE_KINDS: MissileKind[] = ['aam', 'sam', 'arm', 'cruise'];
-const MISSILE_LABELS: Record<MissileKind, string> = {
-  aam: 'AAM (空空)',
-  sam: 'SAM (地空)',
-  arm: 'ARM (反辐射)',
-  cruise: 'Cruise (巡航)',
+const MISSILE_KEYS: Record<MissileKind, string> = {
+  aam: 'missile.aam',
+  sam: 'missile.sam',
+  arm: 'missile.arm',
+  cruise: 'missile.cruise',
+};
+const COLOR_KEYS: Record<Color, string> = {
+  red: 'color.red', yellow: 'color.yellow', blue: 'color.blue', green: 'color.green',
 };
 
 const PATH_LEN_TO_HOME = 73;
@@ -24,30 +28,33 @@ function cellIdAt(board: BoardSnapshot, color: Color, progress: number): number 
 /** Best-plane recommendation among the prompt's candidates, by priority list:
  *  1) reaches home   2) hits own shortcut entry   3) missile factory
  *  4) radar factory  5) library (if QA deck non-empty)
- *  6) (takeoff)      7) closest to home (highest progress) */
+ *  6) (takeoff)      7) closest to home (highest progress)
+ *
+ *  Returns a translation KEY plus optional params, so the caller can render in
+ *  the user's current locale. */
 function recommendPlaneIdx(
   board: BoardSnapshot,
   state: GameState,
   color: Color,
   candidates: number[],
   roll: number | null,
-): { idx: number; reason: string } | null {
+): { idx: number; reasonKey: string; reasonParams?: Record<string, string | number> } | null {
   if (candidates.length === 0) return null;
   if (candidates.length === 1) {
     return {
       idx: candidates[0]!,
-      reason: roll === null ? 'only candidate to take off' : 'only movable plane',
+      reasonKey: roll === null ? 'reason.onlyTakeoff' : 'reason.onlyMovable',
     };
   }
 
   // Takeoff prompt: pick the lowest-index plane (priority 6).
   if (roll === null) {
-    return { idx: Math.min(...candidates), reason: 'take off a new plane (lowest index)' };
+    return { idx: Math.min(...candidates), reasonKey: 'reason.takeoffLowest' };
   }
 
   const qaAvailable = state.deckCounts.questions > 0;
 
-  type Score = { idx: number; tier: number; progress: number; reason: string };
+  type Score = { idx: number; tier: number; progress: number; reasonKey: string; reasonParams?: Record<string, string | number> };
   const scored: Score[] = candidates.map(idx => {
     const plane = state.planes[color][idx]!;
     const fromProgress = plane.progress ?? 0;
@@ -67,21 +74,22 @@ function recommendPlaneIdx(
     const isLibrary = cell?.kind === 'library' && qaAvailable;
 
     let tier = 99;
-    let reason = `closest to home (progress ${fromProgress}/${PATH_LEN_TO_HOME})`;
-    if (reachesHome) { tier = 1; reason = 'reaches home 🏠'; }
-    else if (isShortcut) { tier = 2; reason = 'enters highway shortcut 🛣'; }
-    else if (isMissile) { tier = 3; reason = 'lands on missile factory 🛩'; }
-    else if (isRadar) { tier = 4; reason = 'lands on radar factory 📡'; }
-    else if (isLibrary) { tier = 5; reason = 'lands on library 📚 (Q&A)'; }
+    let reasonKey = 'reason.closestProgress';
+    let reasonParams: Record<string, string | number> | undefined = { p: fromProgress };
+    if (reachesHome) { tier = 1; reasonKey = 'reason.reachesHome'; reasonParams = undefined; }
+    else if (isShortcut) { tier = 2; reasonKey = 'reason.shortcut'; reasonParams = undefined; }
+    else if (isMissile) { tier = 3; reasonKey = 'reason.missileFactory'; reasonParams = undefined; }
+    else if (isRadar) { tier = 4; reasonKey = 'reason.radarFactory'; reasonParams = undefined; }
+    else if (isLibrary) { tier = 5; reasonKey = 'reason.library'; reasonParams = undefined; }
     else { tier = 7; }
 
-    return { idx, tier, progress: fromProgress, reason };
+    return { idx, tier, progress: fromProgress, reasonKey, reasonParams };
   });
 
   // Lowest tier wins; within same tier, highest progress (closest to home) wins.
   scored.sort((a, b) => a.tier - b.tier || b.progress - a.progress || a.idx - b.idx);
   const best = scored[0]!;
-  return { idx: best.idx, reason: best.reason };
+  return { idx: best.idx, reasonKey: best.reasonKey, reasonParams: best.reasonParams };
 }
 
 export default function ActionPanel() {
@@ -96,14 +104,16 @@ export default function ActionPanel() {
   const playCard = useStore(s => s.playCard);
   const leaveRoom = useStore(s => s.leaveRoom);
   const setHoverPlane = useStore(s => s.setHoverPlane);
+  const locale = useStore(s => s.locale) as Locale;
+  const t = useT();
 
   if (!state || !mySeat) {
     // Spectator / not seated: still allow exit.
     return (
       <div className="action-panel">
         <div className="action-header">
-          <strong>Spectating</strong>
-          <button className="ghost" onClick={() => { if (confirm('Leave the game?')) leaveRoom(); }}>Exit</button>
+          <strong>{t('game.spectating')}</strong>
+          <button className="ghost" onClick={() => { if (confirm(t('common.confirmLeave'))) leaveRoom(); }}>{t('common.exit')}</button>
         </div>
       </div>
     );
@@ -183,8 +193,8 @@ export default function ActionPanel() {
   return (
     <div className="action-panel">
       <div className="action-header">
-        <strong>{state.turn}'s turn</strong>
-        <button className="ghost" onClick={() => { if (confirm('Leave the game?')) leaveRoom(); }}>Exit</button>
+        <strong>{t('game.turnLabel', { color: t(COLOR_KEYS[state.turn]) })}</strong>
+        <button className="ghost" onClick={() => { if (confirm(t('common.confirmLeave'))) leaveRoom(); }}>{t('common.exit')}</button>
       </div>
       <div className="dice">
         {rolling ? (
@@ -196,17 +206,22 @@ export default function ActionPanel() {
         )}
         {state.diceChain > 0 && <span className="chain">×{state.diceChain}</span>}
       </div>
-      <div className="phase">phase: {state.phase}</div>
+      <div className="phase">{t('game.phase', { phase: state.phase })}</div>
       {isMyTurn && state.phase === 'awaitRoll' && (
         <button className="primary big" onClick={onRollClick} disabled={rolling}>
-          {rolling ? 'Rolling…' : 'Roll Dice'}
+          {rolling ? t('game.rolling') : t('game.roll')}
         </button>
       )}
       {myPrompt?.kind === 'move' && (
         <div className="prompt">
-          <p>Choose a plane to move ({myPrompt.roll} steps):
+          <p>{t('game.choosePlane', { n: myPrompt.roll })}
             {moveSuggestion !== null && (
-              <span className="suggest-hint"> — suggested: #{moveSuggestion.idx + 1} ({moveSuggestion.reason})</span>
+              <span className="suggest-hint">
+                {t('game.suggest', {
+                  idx: moveSuggestion.idx + 1,
+                  reason: translate(locale, moveSuggestion.reasonKey, moveSuggestion.reasonParams),
+                })}
+              </span>
             )}
           </p>
           <div className="plane-row">
@@ -224,9 +239,14 @@ export default function ActionPanel() {
       )}
       {myPrompt?.kind === 'takeoff' && (
         <div className="prompt">
-          <p>Take off:
+          <p>{t('game.takeoff')}
             {takeoffSuggestion !== null && (
-              <span className="suggest-hint"> — suggested: #{takeoffSuggestion.idx + 1} ({takeoffSuggestion.reason})</span>
+              <span className="suggest-hint">
+                {t('game.suggest', {
+                  idx: takeoffSuggestion.idx + 1,
+                  reason: translate(locale, takeoffSuggestion.reasonKey, takeoffSuggestion.reasonParams),
+                })}
+              </span>
             )}
           </p>
           <div className="plane-row">
@@ -242,16 +262,16 @@ export default function ActionPanel() {
       )}
 
       <div className="hand">
-        <h4>My arsenal</h4>
+        <h4>{t('game.arsenal')}</h4>
         <div className="arsenal-summary">
-          <span className="arsenal-row">📡 Radars: <strong>{myRadars}</strong></span>
+          <span className="arsenal-row">{t('game.radars')} <strong>{myRadars}</strong></span>
           {MISSILE_KINDS.map(k => (
-            <span key={k} className="arsenal-row">🛩 {MISSILE_LABELS[k]}: <strong>{missileCounts[k]}</strong></span>
+            <span key={k} className="arsenal-row">🛩 {t(MISSILE_KEYS[k])}: <strong>{missileCounts[k]}</strong></span>
           ))}
         </div>
         {myMissiles.length > 0 && (
           <div className="hand-actions">
-            <h4>Missile actions</h4>
+            <h4>{t('game.missile.actions')}</h4>
             {myMissiles.map(m => (
               <div key={m.id} className="hand-card">
                 <span>{m.kind.toUpperCase()}</span>
@@ -261,9 +281,9 @@ export default function ActionPanel() {
                     if (c && c !== mySeat) playCard(m.id, { targetColor: c });
                     e.target.value = '';
                   }} defaultValue="">
-                    <option value="" disabled>Fire ARM at…</option>
+                    <option value="" disabled>{t('game.fireARM')}</option>
                     {(['red','yellow','blue','green'] as Color[]).filter(c => c !== mySeat).map(c => (
-                      <option key={c} value={c}>{c}</option>
+                      <option key={c} value={c}>{t(COLOR_KEYS[c])}</option>
                     ))}
                   </select>
                 )}
@@ -277,8 +297,8 @@ export default function ActionPanel() {
       </div>
 
       <div className="hand">
-        <h4>My reward cards</h4>
-        {myRewards.length === 0 && <em>none</em>}
+        <h4>{t('game.rewardCards')}</h4>
+        {myRewards.length === 0 && <em>{t('common.none')}</em>}
         {myRewards.map(r => (
           <div key={r.id} className="hand-card">
             <span>{r.kind}</span>
@@ -288,9 +308,9 @@ export default function ActionPanel() {
                 if (c && c !== mySeat) playCard(r.id, { targetColor: c });
                 e.target.value = '';
               }} defaultValue="">
-                <option value="" disabled>Make … skip</option>
+                <option value="" disabled>{t('game.makeSkip')}</option>
                 {(['red','yellow','blue','green'] as Color[]).filter(c => c !== mySeat).map(c => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>{t(COLOR_KEYS[c])}</option>
                 ))}
               </select>
             )}
@@ -304,17 +324,18 @@ export default function ActionPanel() {
 function CruiseLauncher({ cardId, mySeat }: { cardId: string; mySeat: Color }) {
   const state = useStore(s => s.state)!;
   const playCard = useStore(s => s.playCard);
+  const t = useT();
   const targets: { c: Color; idx: number; label: string }[] = [];
   (['red','yellow','blue','green'] as Color[]).forEach(c => {
     if (c === mySeat) return;
     state.planes[c].forEach(p => {
       if (p.state !== 'onBoard' || p.progress === undefined) return;
       // takeoff cell or landing strip only
-      if (p.progress === 0) targets.push({ c, idx: p.index, label: `${c}#${p.index + 1} on takeoff` });
-      else if (p.progress >= 68 && p.progress < 73) targets.push({ c, idx: p.index, label: `${c}#${p.index + 1} in landing` });
+      if (p.progress === 0) targets.push({ c, idx: p.index, label: `${t(COLOR_KEYS[c])}#${p.index + 1} ${t('game.takeoffOnly')}` });
+      else if (p.progress >= 68 && p.progress < 73) targets.push({ c, idx: p.index, label: `${t(COLOR_KEYS[c])}#${p.index + 1} ${t('game.inLanding')}` });
     });
   });
-  if (targets.length === 0) return <span>(no valid targets)</span>;
+  if (targets.length === 0) return <span>{t('game.noTargets')}</span>;
   return (
     <select onChange={e => {
       const v = e.target.value;
@@ -323,9 +344,9 @@ function CruiseLauncher({ cardId, mySeat }: { cardId: string; mySeat: Color }) {
       playCard(cardId, { targetColor: color as Color, targetPlaneIndex: Number(idx) });
       e.target.value = '';
     }} defaultValue="">
-      <option value="" disabled>Cruise at…</option>
-      {targets.map(t => (
-        <option key={`${t.c}-${t.idx}`} value={`${t.c}:${t.idx}`}>{t.label}</option>
+      <option value="" disabled>{t('game.cruise')}</option>
+      {targets.map(t2 => (
+        <option key={`${t2.c}-${t2.idx}`} value={`${t2.c}:${t2.idx}`}>{t2.label}</option>
       ))}
     </select>
   );

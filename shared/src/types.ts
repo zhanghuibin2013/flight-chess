@@ -1,4 +1,4 @@
-// Shared domain types for 防控作战飞行棋
+// Shared domain types for 防空作战飞行棋
 
 export type Color = 'red' | 'yellow' | 'blue' | 'green';
 export const COLORS: Color[] = ['red', 'yellow', 'blue', 'green'];
@@ -119,7 +119,7 @@ export interface PlayerHand {
 export interface GameOptions {
   takeoffNumbers: number[];   // e.g. [2,4,6] | [5,6] | [6]
   turnTimeoutMs: number;      // default 60000
-  victory: 'twoHome' | 'allHome' | 'timed';
+  victory: 'oneHome' | 'twoHome' | 'allHome' | 'timed';
   timeLimitMs?: number;       // for 'timed' victory
   fillBots: boolean;
 }

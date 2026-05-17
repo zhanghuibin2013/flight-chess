@@ -24,7 +24,7 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document explains the card-based mechanics in 防控作战飞行棋 (Air Defense Combat Flying Chess). It covers the missile card system (AAM, SAM, ARM, and cruise missiles), reward and punishment cards, radar cards, deck construction and distribution, probabilities, and strategies for optimal usage. It also documents how cards interact with movement, combat, and special cells.
+This document explains the card-based mechanics in 防空作战飞行棋 (Air Defense Combat Flying Chess). It covers the missile card system (AAM, SAM, ARM, and cruise missiles), reward and punishment cards, radar cards, deck construction and distribution, probabilities, and strategies for optimal usage. It also documents how cards interact with movement, combat, and special cells.
 
 ## Project Structure
 The card system spans shared types, server-side game logic, and board mechanics:

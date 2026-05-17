@@ -1,4 +1,4 @@
-// 防控作战飞行棋 server entrypoint.
+// 防空作战飞行棋 server entrypoint.
 // In dev: just runs Socket.IO on PORT. In prod: also serves the built web/dist.
 
 import http from 'node:http';
@@ -89,6 +89,6 @@ console.log(`[server] loaded ${questions.length} Q&A rows`);
 
 bindHandlers(io, registry, () => questions);
 
-httpServer.listen(PORT, () => {
-  console.log(`[server] listening on http://localhost:${PORT}`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`[server] listening on http://0.0.0.0:${PORT}`);
 });

@@ -39,7 +39,7 @@ export const RoomReadyZ = z.object({ ready: z.boolean() });
 export const RoomSetOptsZ = z.object({
   takeoffNumbers: z.array(z.number().int().min(1).max(6)).min(1).max(6),
   turnTimeoutMs: z.number().int().min(10_000).max(300_000),
-  victory: z.enum(['twoHome','allHome','timed'] as const),
+  victory: z.enum(['oneHome','twoHome','allHome','timed'] as const),
   timeLimitMs: z.number().int().optional(),
   fillBots: z.boolean(),
 });

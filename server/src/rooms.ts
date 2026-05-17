@@ -30,9 +30,9 @@ export interface Room {
 }
 
 const DEFAULT_OPTIONS: GameOptions = {
-  takeoffNumbers: [6],
+  takeoffNumbers: [2, 4, 6],
   turnTimeoutMs: 60_000,
-  victory: 'twoHome',
+  victory: 'oneHome',
   fillBots: false,
 };
 
@@ -244,13 +244,19 @@ export class RoomRegistry {
 
   getRoom(roomId: string): Room | undefined { return this.rooms.get(roomId); }
 
-  private generateRoomId(): string {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    for (let i = 0; i < 10; i++) {
+    private generateRoomId(): string {
+    // Digits only — easier to type / read out loud.
+    // 6 digits gives 900,000 distinct codes (100000-999999), with retry on collision.
+    for (let i = 0; i < 20; i++) {
       let s = '';
-      for (let k = 0; k < 6; k++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+      for (let k = 0; k < 6; k++) s += Math.floor(Math.random() * 10).toString();
+      // Avoid leading zero for cleaner display.
+      if (s[0] === '0') s = (1 + Math.floor(Math.random() * 9)).toString() + s.slice(1);
       if (!this.rooms.has(s)) return s;
     }
-    return nanoid(6).toUpperCase();
+    // Fallback: extend by another digit until unique.
+    let s = nanoid(6).replace(/\D/g, '');
+    while (s.length < 6) s += Math.floor(Math.random() * 10).toString();
+    return s.slice(0, 6);
   }
 }

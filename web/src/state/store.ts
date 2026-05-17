@@ -24,6 +24,10 @@ interface Store {
   myCardEvents: { cardType: string; cardKind?: string; ts: number }[];
   lastError: string | null;
 
+  /** UI language. Persisted in localStorage. Default 'zh'. */
+  locale: 'zh' | 'en';
+  setLocale(l: 'zh' | 'en'): void;
+
   hoverPlaneIdx: number | null;
   setHoverPlane(idx: number | null): void;
 
@@ -53,6 +57,22 @@ interface Store {
 export const useStore = create<Store>((set, get) => {
   const sock = getSocket();
 
+  // ---- Dice-spin state-buffering ----
+  // When the server resolves a dice roll it broadcasts a single GameState that
+  // bundles the new dice value AND its consequences (phase change, new prompts,
+  // moved planes, etc.). To make the dice animation feel weight-y we want every
+  // viewer to see the spin finish before any other UI changes.
+  //
+  // Strategy on receiving a roll-bearing GameState:
+  //   1. Immediately publish ONLY the dice-trigger fields (lastDice/diceChain)
+  //      so each client's ActionPanel can start/refresh its spin animation.
+  //   2. Buffer the full new state and apply it after SPIN_DEFER_MS — matching
+  //      the ActionPanel's spin-tail length so prompts/phase appear exactly as
+  //      the dice settles.
+  const SPIN_DEFER_MS = 800;
+  let pendingState: GameState | null = null;
+  let pendingTimer: number | null = null;
+
   sock.on(S2C.Welcome, ({ playerId }) => {
     if (playerId) {
       set({ playerId });
@@ -69,10 +89,55 @@ export const useStore = create<Store>((set, get) => {
     if (!room) set({ screen: 'lobby' });
   });
   sock.on(S2C.GameState, ({ state }) => {
-    set({ state });
-    if (state) {
-      if (get().screen !== 'game') set({ screen: 'game' });
+    if (!state) {
+      // Server cleared state — drop any pending buffered update too.
+      if (pendingTimer !== null) { clearTimeout(pendingTimer); pendingTimer = null; }
+      pendingState = null;
+      set({ state });
+      return;
     }
+    // Reference state for comparison: latest authoritative knowledge we have,
+    // which is the buffered state if one exists (its dice fields were already
+    // partially leaked into `get().state`), otherwise the live store state.
+    const ref = pendingState ?? get().state;
+    const isRoll = !!ref && (
+      ref.lastDice !== state.lastDice ||
+      ref.diceChain !== state.diceChain
+    );
+    if (isRoll) {
+      // Phase 1: leak ONLY the dice-trigger fields so spinners react.
+      const cur = get().state;
+      if (cur) {
+        set({
+          state: {
+            ...cur,
+            lastDice: state.lastDice,
+            diceChain: state.diceChain,
+          } as GameState,
+        });
+      } else {
+        // No prior state to merge into — just publish the full one.
+        set({ state });
+        pendingState = null;
+        return;
+      }
+      // Phase 2: defer the full update until the spin tail completes.
+      pendingState = state;
+      if (pendingTimer !== null) clearTimeout(pendingTimer);
+      pendingTimer = window.setTimeout(() => {
+        const next = pendingState;
+        pendingState = null;
+        pendingTimer = null;
+        if (next) set({ state: next });
+      }, SPIN_DEFER_MS);
+    } else {
+      // Non-roll update (e.g. card play, combat resolution): apply immediately,
+      // dropping any unrelated pending buffer.
+      if (pendingTimer !== null) { clearTimeout(pendingTimer); pendingTimer = null; }
+      pendingState = null;
+      set({ state });
+    }
+    if (get().screen !== 'game') set({ screen: 'game' });
   });
   sock.on(S2C.Board, ({ board }) => set({ board }));
   sock.on(S2C.EventLog, ({ line }) => {
@@ -95,6 +160,14 @@ export const useStore = create<Store>((set, get) => {
     chat: [],
     myCardEvents: [],
     lastError: null,
+    locale: ((): 'zh' | 'en' => {
+      const v = (typeof localStorage !== 'undefined') ? localStorage.getItem('fkzz.locale') : null;
+      return v === 'en' || v === 'zh' ? v : 'zh';
+    })(),
+    setLocale(l) {
+      if (typeof localStorage !== 'undefined') localStorage.setItem('fkzz.locale', l);
+      set({ locale: l });
+    },
     hoverPlaneIdx: null,
     setHoverPlane(idx) { set({ hoverPlaneIdx: idx }); },
 

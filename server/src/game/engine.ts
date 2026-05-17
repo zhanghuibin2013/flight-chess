@@ -1,4 +1,4 @@
-// Authoritative game engine for 防控作战飞行棋.
+// Authoritative game engine for 防空作战飞行棋.
 //
 // This is a turn-based state machine: each public method maps to a player
 // intent (or a host action). After every transition, `onState` is called
@@ -882,7 +882,13 @@ export class GameEngine {
   // ---------- Victory ----------
   private checkVictory(): boolean {
     const wins: Color[] = [];
-    if (this.state.options.victory === 'twoHome') {
+    if (this.state.options.victory === 'oneHome') {
+      // First to land any 1 plane home wins.
+      for (const c of this.playerSeats) {
+        const home = this.state.planes[c].filter(p => p.state === 'home').length;
+        if (home >= 1) wins.push(c);
+      }
+    } else if (this.state.options.victory === 'twoHome') {
       for (const c of this.playerSeats) {
         const home = this.state.planes[c].filter(p => p.state === 'home').length;
         if (home >= 2) wins.push(c);

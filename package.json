@@ -2,7 +2,7 @@
   "name": "fkzz-feixingqi",
   "private": true,
   "version": "0.1.0",
-  "description": "防控作战飞行棋 online multiplayer",
+  "description": "防空作战飞行棋 online multiplayer",
   "workspaces": ["shared", "server", "web"],
   "scripts": {
     "dev": "concurrently -n srv,web -c blue,green \"npm:dev -w server\" \"npm:dev -w web\"",

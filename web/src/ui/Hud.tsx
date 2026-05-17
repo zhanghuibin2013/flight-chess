@@ -33,7 +33,7 @@ export default function Hud() {
             </div>
             <div className="hud-stats">
               <span title={t('hud.titleRadars')}>📡 {hand.radars}</span>
-              <span title={t('hud.titleMissiles')}>🛩 {hand.missiles.length}</span>
+              <span title={t('hud.titleMissiles')}>🚀 {hand.missiles.length}</span>
               <span title={t('hud.titlePlanesHome')}>🏠 {homed}/4</span>
               {hand.skipRounds > 0 && <span className="skip">{t('hud.skip')}×{hand.skipRounds}</span>}
               {hand.shield && <span className="shield">🛡</span>}

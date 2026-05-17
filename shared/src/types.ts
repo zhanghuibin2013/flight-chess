@@ -106,6 +106,9 @@ export interface PlayerPublic {
   isBot: boolean;
   /** Optional avatar emoji selected in the lobby. Visible to everyone. */
   avatar?: string;
+  /** When true, the server is auto-driving this seat (autopilot). Bot seats
+   *  always behave like autopilot regardless of this flag. */
+  autopilot?: boolean;
 }
 
 export interface PlayerHand {

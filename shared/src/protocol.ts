@@ -14,6 +14,9 @@ export const C2S = {
   RoomClaimSeat: 'room:claimSeat',
   RoomStart:     'room:start',
   RoomRestart:   'room:restart',
+  RoomAddBot:    'room:addBot',
+  RoomRemoveBot: 'room:removeBot',
+  PlayerSetAutopilot: 'player:setAutopilot',
   SessionResume: 'session:resume',
   TurnRoll:      'turn:roll',
   TurnTakeoff:   'turn:chooseTakeoff',
@@ -42,6 +45,13 @@ export const LobbyJoinZ = z.object({
 export const RoomClaimSeatZ = z.object({
   color: z.enum(['red','yellow','blue','green'] as const),
 });
+export const RoomAddBotZ = z.object({
+  color: z.enum(['red','yellow','blue','green'] as const),
+});
+export const RoomRemoveBotZ = z.object({
+  color: z.enum(['red','yellow','blue','green'] as const),
+});
+export const PlayerSetAutopilotZ = z.object({ enabled: z.boolean() });
 export const RoomReadyZ = z.object({ ready: z.boolean() });
 export const RoomSetOptsZ = z.object({
   takeoffNumbers: z.array(z.number().int().min(1).max(6)).min(1).max(6),

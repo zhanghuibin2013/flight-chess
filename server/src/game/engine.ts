@@ -112,6 +112,33 @@ interface PendingQA {
   seat: Color;
 }
 
+/** Public-facing snapshot of any pending combat. The bot driver and tests
+ *  consume this without leaking internal mutable state. */
+export type PendingCombatSnapshot =
+  | {
+      kind: 'aam'; id: string;
+      attacker: Color; defender: Color;
+      attackerPlaneIndex: number;
+      defenderPlaneIndices: number[];
+      proactive: boolean;
+      step: AamStep;
+      attackerRoll?: number;
+      defenderRoll?: number;
+    }
+  | {
+      kind: 'sam'; id: string;
+      attacker: Color; defender: Color;
+      planeIndex: number;
+    }
+  | { kind: 'arm'; id: string; attacker: Color; defender: Color }
+  | {
+      kind: 'cruise'; id: string;
+      attacker: Color; defender: Color;
+      targetPlaneIndex: number;
+    }
+  | { kind: 'punishRetreat'; id: string; seat: Color; planeIndex: number };
+
+
 export interface EngineCallbacks {
   /** Called after every committed state change. */
   onState(state: GameState): void;
@@ -168,6 +195,52 @@ export class GameEngine {
   // ---------- Public board snapshot for clients ----------
   boardSnapshot(): BoardSnapshot {
     return { cells: this.board.cells, paths: this.board.paths };
+  }
+
+  /** Sanitized snapshot of any pending combat — used by the bot driver to
+   *  pick a smart response. Returns null when no combat is pending. */
+  getPendingCombat(): PendingCombatSnapshot | null {
+    const pc = this.pendingCombat;
+    if (!pc) return null;
+    if (pc.kind === 'aam') {
+      return {
+        kind: 'aam', id: pc.id,
+        attacker: pc.attacker, defender: pc.defender,
+        attackerPlaneIndex: pc.attackerPlaneIndex,
+        defenderPlaneIndices: pc.defenderPlaneIndices.slice(),
+        proactive: !!pc.proactive,
+        step: pc.step,
+        attackerRoll: pc.attackerRoll,
+        defenderRoll: pc.defenderRoll,
+      };
+    }
+    if (pc.kind === 'sam') {
+      return {
+        kind: 'sam', id: pc.id,
+        attacker: pc.attacker, defender: pc.defender,
+        planeIndex: pc.planeIndex,
+      };
+    }
+    if (pc.kind === 'arm') {
+      return { kind: 'arm', id: pc.id, attacker: pc.attacker, defender: pc.defender };
+    }
+    if (pc.kind === 'cruise') {
+      return {
+        kind: 'cruise', id: pc.id,
+        attacker: pc.attacker, defender: pc.defender,
+        targetPlaneIndex: pc.targetPlaneIndex,
+      };
+    }
+    if (pc.kind === 'punishRetreat') {
+      return { kind: 'punishRetreat', id: pc.id, seat: pc.attacker, planeIndex: pc.planeIndex };
+    }
+    return null;
+  }
+
+  /** Sanitized snapshot of any pending QA — used by the bot driver. */
+  getPendingQA(): { questionId: string; seat: Color } | null {
+    if (!this.pendingQA) return null;
+    return { questionId: this.pendingQA.questionId, seat: this.pendingQA.seat };
   }
 
   // ---------- State init ----------

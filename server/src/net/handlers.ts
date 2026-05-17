@@ -4,7 +4,7 @@ import type { Server, Socket } from 'socket.io';
 import {
   C2S, S2C, LobbyCreateZ, LobbyJoinZ, RoomClaimSeatZ, RoomReadyZ, RoomSetOptsZ,
   TurnRollZ, TurnTakeoffZ, TurnMoveZ, CardPlayZ, CombatRespondZ, QAAnswerZ, ChatSayZ,
-  SessionResumeZ,
+  SessionResumeZ, RoomAddBotZ, RoomRemoveBotZ, PlayerSetAutopilotZ,
 } from '@fkzz/shared';
 import type {
   GameState, RoomPublic, BoardSnapshot,
@@ -202,6 +202,49 @@ export function bindHandlers(io: Server, registry: RoomRegistry, getQuestions: (
       io.to(room.id).emit(S2C.Board, { board });
       broadcastRoom(io, registry, room.id);
       cb.onState(room.engine!.state);
+    });
+
+    socket.on(C2S.RoomAddBot, (raw: unknown) => {
+      const parsed = RoomAddBotZ.safeParse(raw);
+      if (!parsed.success) return sendErr(socket, 'BAD_PAYLOAD', parsed.error.message);
+      const player = registry.playerBySocket(socket.id);
+      if (!player) return;
+      const room = registry.roomOfPlayer(player.id);
+      if (!room) return;
+      const ok = registry.addBot(room.id, player.id, parsed.data.color);
+      if (!ok) return sendErr(socket, 'CANT_ADD_BOT', 'cannot add bot');
+      broadcastRoom(io, registry, room.id);
+      broadcastLobby();
+    });
+
+    socket.on(C2S.RoomRemoveBot, (raw: unknown) => {
+      const parsed = RoomRemoveBotZ.safeParse(raw);
+      if (!parsed.success) return sendErr(socket, 'BAD_PAYLOAD', parsed.error.message);
+      const player = registry.playerBySocket(socket.id);
+      if (!player) return;
+      const room = registry.roomOfPlayer(player.id);
+      if (!room) return;
+      const ok = registry.removeBot(room.id, player.id, parsed.data.color);
+      if (!ok) return sendErr(socket, 'CANT_REMOVE_BOT', 'cannot remove bot');
+      broadcastRoom(io, registry, room.id);
+      broadcastLobby();
+    });
+
+    socket.on(C2S.PlayerSetAutopilot, (raw: unknown) => {
+      const parsed = PlayerSetAutopilotZ.safeParse(raw);
+      if (!parsed.success) return;
+      const player = registry.playerBySocket(socket.id);
+      if (!player) return;
+      const room = registry.roomOfPlayer(player.id);
+      if (!room) return;
+      const ok = registry.setAutopilot(room.id, player.id, parsed.data.enabled);
+      if (!ok) return;
+      broadcastRoom(io, registry, room.id);
+      // If toggled ON during a pending action for this seat, immediately let
+      // the bot driver pick it up.
+      if (room.engine && room.botDriver) {
+        room.botDriver.tick(room.engine.state);
+      }
     });
 
     socket.on(C2S.TurnRoll, (raw: unknown) => withGame(registry, socket, (room) => {

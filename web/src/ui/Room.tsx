@@ -44,7 +44,7 @@ const VICTORY_KEYS: Record<VictoryMode, string> = {
 };
 
 export default function Room() {
-  const { room, playerId, claimSeat, setReady, setOptions, startGame, leaveRoom } = useStore();
+  const { room, playerId, claimSeat, setReady, setOptions, startGame, leaveRoom, addBot, removeBot } = useStore();
   const t = useT();
   if (!room) return <div>{t('room.loading')}</div>;
 
@@ -79,17 +79,40 @@ export default function Room() {
         {SEAT_DISPLAY_ORDER.map(color => {
           const s = room.seats.find(x => x.color === color);
           if (!s) return null;
+          const seatedBot = s.player?.isBot;
+          const seatedPlayerLabel = s.player
+            ? `${seatedBot ? t('player.bot') : s.player.nickname}${s.ready ? ' ✓' : ''}${!s.player.connected ? ' ' + t('room.offline') : ''}`
+            : t('common.empty');
           return (
-            <button
+            <div
               key={s.color}
+              role="button"
+              tabIndex={0}
               className={`seat seat-${s.color} ${s.player ? 'taken' : ''} ${me?.color === s.color ? 'mine' : ''}`}
               onClick={() => claimSeat(s.color)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); claimSeat(s.color); } }}
             >
               <div className="seat-color">{t(COLOR_SHORT_KEYS[s.color])} {t(COLOR_KEYS[s.color])}</div>
               <div className="seat-player">
-                {s.player ? `${s.player.nickname}${s.ready ? ' ✓' : ''}${!s.player.connected ? ' ' + t('room.offline') : ''}` : t('common.empty')}
+                {seatedPlayerLabel}
               </div>
-            </button>
+              {isHost && !s.player && (
+                <button
+                  className="ghost seat-action"
+                  onClick={(e) => { e.stopPropagation(); addBot(s.color); }}
+                >
+                  + {t('room.addBot')}
+                </button>
+              )}
+              {isHost && seatedBot && (
+                <button
+                  className="ghost seat-action"
+                  onClick={(e) => { e.stopPropagation(); removeBot(s.color); }}
+                >
+                  {t('room.removeBot')}
+                </button>
+              )}
+            </div>
           );
         })}
       </div>

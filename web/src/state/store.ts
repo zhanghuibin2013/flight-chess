@@ -40,6 +40,9 @@ interface Store {
   joinRoom(roomId: string, nickname: string, avatar?: string): void;
   leaveRoom(): void;
   claimSeat(color: Color): void;
+  addBot(color: Color): void;
+  removeBot(color: Color): void;
+  setAutopilot(enabled: boolean): void;
   setReady(ready: boolean): void;
   setOptions(options: GameOptions): void;
   startGame(): void;
@@ -220,6 +223,9 @@ export const useStore = create<Store>((set, get) => {
       set({ room: null, board: null, state: null, screen: 'lobby', playerId: '' });
     },
     claimSeat(color) { sock.emit(C2S.RoomClaimSeat, { color }); },
+    addBot(color) { sock.emit(C2S.RoomAddBot, { color }); },
+    removeBot(color) { sock.emit(C2S.RoomRemoveBot, { color }); },
+    setAutopilot(enabled) { sock.emit(C2S.PlayerSetAutopilot, { enabled }); },
     setReady(ready) { sock.emit(C2S.RoomReady, { ready }); },
     setOptions(options) { sock.emit(C2S.RoomSetOpts, options); },
     startGame() { sock.emit(C2S.RoomStart); },

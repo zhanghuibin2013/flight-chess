@@ -117,6 +117,7 @@ function recommendPlaneIdx(
 export default function ActionPanel() {
   const state = useStore(s => s.state);
   const board = useStore(s => s.board);
+  const room = useStore(s => s.room);
   const isMyTurn = useStore(s => s.isMyTurn());
   const mySeat = useStore(s => s.mySeat()) as Color | null;
   const myPrompt = useStore(s => s.myPrompt());
@@ -126,6 +127,7 @@ export default function ActionPanel() {
   const playCard = useStore(s => s.playCard);
   const leaveRoom = useStore(s => s.leaveRoom);
   const setHoverPlane = useStore(s => s.setHoverPlane);
+  const setAutopilot = useStore(s => s.setAutopilot);
   const locale = useStore(s => s.locale) as Locale;
   const t = useT();
 
@@ -234,6 +236,22 @@ export default function ActionPanel() {
     <div className="action-panel">
       <div className="action-header">
         <strong>{t('game.turnLabel', { color: t(COLOR_KEYS[state.turn]) })}</strong>
+        {mySeat && (() => {
+          const meSeat = room?.seats.find(s => s.color === mySeat);
+          const meIsBot = !!meSeat?.player?.isBot;
+          const autopilot = !!meSeat?.player?.autopilot;
+          if (meIsBot) return null;
+          return (
+            <label className="autopilot-toggle" title={t('game.autopilotHint')}>
+              <input
+                type="checkbox"
+                checked={autopilot}
+                onChange={e => setAutopilot(e.target.checked)}
+              />
+              <span>{t('game.autopilot')}</span>
+            </label>
+          );
+        })()}
         <button className="ghost" onClick={() => { if (confirm(t('common.confirmLeave'))) leaveRoom(); }}>{t('common.exit')}</button>
       </div>
       <div className="dice">
@@ -334,7 +352,7 @@ export default function ActionPanel() {
         <div className="arsenal-summary">
           <span className="arsenal-row">{t('game.radars')} <strong>{myRadars}</strong></span>
           {MISSILE_KINDS.map(k => (
-            <span key={k} className="arsenal-row">🛩 {t(MISSILE_KEYS[k])}: <strong>{missileCounts[k]}</strong></span>
+            <span key={k} className="arsenal-row">🚀 {t(MISSILE_KEYS[k])}: <strong>{missileCounts[k]}</strong></span>
           ))}
         </div>
         {myMissiles.length > 0 && (

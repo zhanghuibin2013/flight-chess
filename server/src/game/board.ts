@@ -126,16 +126,18 @@ const COLOR_ROT: Record<Color, number> = { red: 0, yellow: 1, blue: 2, green: 3 
 
 // Canonical RED:
 // - Takeoff at ring idx 0 = (LO, HI) ≈ (0.08, 0.92) — bottom-left corner.
-// - Hangar: 4 slots in a tight 2×2 cluster tucked into the bottom-left
-//   corner OUTSIDE the ring, well clear of ring cells.
+//   The takeoff cell spans roughly x:[0.059,0.101], y:[0.899,0.941].
+// - Hangar: 4 slots in a tight 2×2 cluster placed diagonally just past the
+//   takeoff cell's bottom-left corner — snug against the takeoff cell with
+//   only a few pixels of gap, but never overlapping it.
 // - Landing entry on the ring at idx 68 (= 0 - 16 mod 84) which sits on the
 //   bottom edge near the bottom-right corner (in green's quadrant):
 //   ≈ (0.72, 0.92).
 // - Landing strip walks diagonally inward (up-left) from that ring point to
 //   home in the bottom-left quadrant of the center.
 const RED_HANGAR: Pt[] = [
-  { x: 0.03, y: 0.94 }, { x: 0.07, y: 0.94 },
-  { x: 0.03, y: 0.98 }, { x: 0.07, y: 0.98 },
+  { x: 0.00, y: 0.965 }, { x: 0.04, y: 0.965 },
+  { x: 0.00, y: 1.005 }, { x: 0.04, y: 1.005 },
 ];
 // Note: red's home is offset toward red's bottom-left corner so that the
 // four homes don't visually overlap at the dead center.

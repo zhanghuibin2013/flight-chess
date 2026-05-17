@@ -21,16 +21,6 @@ const MARGIN = 90;
 // to the bottom-left for that player.
 const VIEW_ROT: Record<Color, number> = { red: 0, yellow: 1, blue: 2, green: 3 };
 
-// Canonical board-corner per color (in normalized 0..1 board coords).
-// Each color's quadrant occupies one corner of the play frame; the corner
-// is the most extreme point of that quadrant on the board.
-const CORNER_POS: Record<Color, { x: number; y: number }> = {
-  red:    { x: 0, y: 1 },
-  yellow: { x: 0, y: 0 },
-  blue:   { x: 1, y: 0 },
-  green:  { x: 1, y: 1 },
-};
-
 function rotateView(p: { x: number; y: number }, k: number): { x: number; y: number } {
   let { x, y } = p;
   for (let i = 0; i < k; i++) {
@@ -49,84 +39,79 @@ export default function Board() {
   // If we're a spectator (no seat), use the canonical red view.
   const k = mySeat ? VIEW_ROT[mySeat] : 0;
 
-  // Active radar-zone cells per color (highlight overlay, visible to everyone).
-  const radarOverlays: { color: Color; cellId: number }[] = [];
-  (['red','yellow','blue','green'] as Color[]).forEach(c => {
-    const zoneSize = radarZoneSize(state.hands[c].radars);
-    if (zoneSize <= 0) return;
-    board.paths[c].radarZone.slice(0, zoneSize).forEach(cellId => {
-      radarOverlays.push({ color: c, cellId });
-    });
-  });
-
   return (
     <svg className="board" viewBox={`${-MARGIN} ${-MARGIN} ${SIZE + 2 * MARGIN} ${SIZE + 2 * MARGIN}`} width="100%" preserveAspectRatio="xMidYMid meet">
       {/* Frame */}
       <rect x="0" y="0" width={SIZE} height={SIZE} fill="#fafafa" rx="8" />
 
-      {/* Defs: per-color arrowhead marker for shortcut flow direction, plus a
-          clip path that constrains corner-anchored ADIZ circles to the play
-          frame. */}
+      {/* Defs: per-color cross-hatch pattern used to mark currently-protected
+          radar-zone cells. */}
       <defs>
+        {/* Dense cross-hatch pattern (X-grid) per color — used as fill on
+            an overlay rect drawn over each currently-protected radar-zone
+            cell. Tile size 5 px gives a tight, clearly-visible grid. */}
         {(['red','yellow','blue','green'] as Color[]).map(c => (
-          <marker
-            key={`m-${c}`}
-            id={`shortcut-arrow-${c}`}
-            viewBox="0 0 10 10"
-            refX="8"
-            refY="5"
-            markerWidth="7"
-            markerHeight="7"
-            orient="auto-start-reverse"
+          <pattern
+            key={`hatch-${c}`}
+            id={`adiz-hatch-${c}`}
+            patternUnits="userSpaceOnUse"
+            width={5}
+            height={5}
           >
-            <path d="M0 0 L10 5 L0 10 Z" fill={COLOR_STROKE[c]} />
-          </marker>
+            <path
+              d="M0,5 L5,0 M0,0 L5,5"
+              stroke={COLOR_STROKE[c]}
+              strokeWidth={0.9}
+              strokeOpacity={0.55}
+            />
+          </pattern>
         ))}
-        <clipPath id="board-frame-clip">
-          <rect x="0" y="0" width={SIZE} height={SIZE} rx="8" />
-        </clipPath>
       </defs>
-
-      {/* Per-color ADIZ corner marker: two concentric circles centered at
-          the very corner of the board (the corner of that color's quadrant).
-          Drawn whenever that color owns at least one radar. The circles are
-          clipped to the play frame so only the in-board quarter shows. */}
-      {(['red','yellow','blue','green'] as Color[]).map(c => {
-        if (state.hands[c].radars <= 0) return null;
-        const corner = CORNER_POS[c];
-        const r = rotateView(corner, k);
-        const cx = r.x * SIZE;
-        const cy = r.y * SIZE;
-        const isMine = c === mySeat;
-        const r1 = 95;
-        const r2 = 165;
-        return (
-          <g key={`adiz-${c}`} pointerEvents="none" clipPath="url(#board-frame-clip)">
-            <circle
-              cx={cx} cy={cy} r={r1}
-              fill="none"
-              stroke={COLOR_STROKE[c]}
-              strokeWidth={isMine ? 2.5 : 2}
-              strokeOpacity={isMine ? 0.65 : 0.45}
-              strokeDasharray="6 5"
-            />
-            <circle
-              cx={cx} cy={cy} r={r2}
-              fill="none"
-              stroke={COLOR_STROKE[c]}
-              strokeWidth={isMine ? 2.5 : 2}
-              strokeOpacity={isMine ? 0.55 : 0.35}
-              strokeDasharray="6 5"
-            />
-          </g>
-        );
-      })}
 
       {/* Cells */}
       {board.cells.map(c => <CellNode key={c.id} cell={c} k={k} />)}
 
-      {/* Shortcut connectors: animated dashed line with arrow indicating
-          travel direction (entry → exit). */}
+      {/* ADIZ cell highlight: overlay a cross-hatch grid on every currently
+          protected radar-zone cell. The number of marked cells scales with
+          radar count via radarZoneSize():
+          • 1–2 radars → just the takeoff cell.
+          • 3–4 radars → takeoff + the two flanking cells.
+          • 5–6 radars → reach the ±2 cells.
+          • 7+ radars  → reach the ±3 cells. */}
+      {(['red','yellow','blue','green'] as Color[]).map(c => {
+        const radars = state.hands[c].radars;
+        if (radars <= 0) return null;
+        const zoneSize = radarZoneSize(radars);
+        const zoneCellIds = board.paths[c].radarZone.slice(0, zoneSize);
+        if (zoneCellIds.length === 0) return null;
+        const side = 30;
+        return (
+          <g key={`adiz-hatch-${c}`} pointerEvents="none">
+            {zoneCellIds.map(cellId => {
+              const cell = board.cells.find(cc => cc.id === cellId);
+              if (!cell) return null;
+              const rp = rotateView({ x: cell.x, y: cell.y }, k);
+              const cx = rp.x * SIZE;
+              const cy = rp.y * SIZE;
+              return (
+                <rect
+                  key={cellId}
+                  x={cx - side / 2}
+                  y={cy - side / 2}
+                  width={side}
+                  height={side}
+                  rx={4}
+                  ry={4}
+                  fill={`url(#adiz-hatch-${c})`}
+                />
+              );
+            })}
+          </g>
+        );
+      })}
+
+      {/* Shortcut connectors: animated dashed line indicating the
+          highway path between entry and exit. */}
       {board.cells
         .filter(c => c.kind === 'shortcutEntry' && c.shortcutPair !== undefined && c.color)
         .map(entry => {
@@ -147,68 +132,9 @@ export default function Board() {
               strokeDasharray="8 5"
               opacity={0.85}
               pointerEvents="none"
-              markerEnd={`url(#shortcut-arrow-${entry.color})`}
             />
           );
         })}
-
-      {/* Radar-zone highlight for ALL colors: concentric arcs centered at the
-          color's takeoff (the "radar source"). Each protected cell gets a fat
-          arc segment at radius = distance(takeoff → cell); since the radar
-          zone is sorted by distance from base, adjacent cells render as a
-          fan of concentric rings emanating from each base. */}
-      {radarOverlays.map(({ color, cellId }) => {
-        const cell = board.cells.find(c => c.id === cellId);
-        if (!cell) return null;
-        const takeoffId = board.paths[color].takeoff;
-        const takeoffCell = board.cells.find(c => c.id === takeoffId);
-        if (!takeoffCell) return null;
-
-        const center = rotateView({ x: takeoffCell.x, y: takeoffCell.y }, k);
-        const target = rotateView({ x: cell.x, y: cell.y }, k);
-        const cx = center.x * SIZE;
-        const cy = center.y * SIZE;
-        const tx = target.x * SIZE;
-        const ty = target.y * SIZE;
-        const dx = tx - cx;
-        const dy = ty - cy;
-        const radius = Math.hypot(dx, dy);
-        if (radius < 1) return null; // skip the takeoff itself
-
-        const theta = Math.atan2(dy, dx);
-        // Angular half-span so the arc visually covers ~one cell width at this radius.
-        const halfCell = 18;
-        const halfSpan = Math.min(Math.PI / 6, Math.asin(Math.min(1, halfCell / radius)));
-        const x0 = cx + radius * Math.cos(theta - halfSpan);
-        const y0 = cy + radius * Math.sin(theta - halfSpan);
-        const x1 = cx + radius * Math.cos(theta + halfSpan);
-        const y1 = cy + radius * Math.sin(theta + halfSpan);
-
-        const isMine = color === mySeat;
-        return (
-          <g key={`radar-${color}-${cellId}`} pointerEvents="none">
-            {/* Soft "halo" backing for richer contrast against board cells. */}
-            <path
-              d={`M ${x0} ${y0} A ${radius} ${radius} 0 0 1 ${x1} ${y1}`}
-              stroke={COLOR_FILL[color]}
-              strokeWidth={isMine ? 18 : 16}
-              strokeOpacity={isMine ? 0.30 : 0.20}
-              strokeLinecap="round"
-              fill="none"
-            />
-            {/* Foreground arc with the color's outline tone. */}
-            <path
-              d={`M ${x0} ${y0} A ${radius} ${radius} 0 0 1 ${x1} ${y1}`}
-              stroke={COLOR_STROKE[color]}
-              strokeWidth={isMine ? 3 : 2}
-              strokeOpacity={isMine ? 0.85 : 0.65}
-              strokeDasharray="5 4"
-              strokeLinecap="round"
-              fill="none"
-            />
-          </g>
-        );
-      })}
 
       {/* Hangars */}
       {(['red','yellow','blue','green'] as Color[]).map(c => (
@@ -260,10 +186,10 @@ function CellNode({ cell, k }: { cell: Cell; k: number }) {
   let icon: string | null = null;
   let iconSize = 14;
   let iconDy = 5;
-  if (cell.kind === 'missileFactory') { icon = '💣'; iconSize = 17; iconDy = 6; }
+  if (cell.kind === 'missileFactory') { icon = '🚀'; iconSize = 17; iconDy = 6; }
   else if (cell.kind === 'radarFactory') icon = '📡';
   else if (cell.kind === 'library') icon = '?';
-  else if (cell.kind === 'shortcutEntry') { icon = '🚀'; iconSize = 18; iconDy = 6; }
+  else if (cell.kind === 'shortcutEntry') { icon = '🛣'; iconSize = 18; iconDy = 6; }
   else if (cell.kind === 'shortcutExit')  { icon = '🏁'; iconSize = 18; iconDy = 6; }
   else if (cell.kind === 'home') icon = '★';
   else if (cell.kind === 'takeoff') icon = '▲';
@@ -380,7 +306,7 @@ function ArsenalBadge({ color, k }: { color: Color; k: number }) {
         fill={COLOR_STROKE[color]}
         fontWeight={700}
       >
-        📡{hand.radars} 🛩{hand.missiles.length}
+        📡{hand.radars} 🚀{hand.missiles.length}
       </text>
     </g>
   );

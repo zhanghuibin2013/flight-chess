@@ -7,6 +7,7 @@ import type {
 } from '@fkzz/shared';
 import { COLORS } from '@fkzz/shared';
 import { GameEngine, EngineCallbacks } from './game/engine.js';
+import { BotDriver } from './game/botDriver.js';
 
 export interface Player {
   id: string;          // stable player id (cookie-style)
@@ -17,6 +18,9 @@ export interface Player {
   /** Optional avatar emoji chosen in the lobby. Used to render player
    *  badges next to each base on the board. */
   avatar?: string;
+  /** When true (humans only), the server auto-drives this seat. Bots always
+   *  behave like autopilot regardless of this flag. */
+  autopilot?: boolean;
 }
 
 export interface Seat {
@@ -31,6 +35,8 @@ export interface Room {
   seats: Seat[];               // length 4, fixed colors
   options: GameOptions;
   engine?: GameEngine;
+  /** Server-side AI driver attached when the engine is created. */
+  botDriver?: BotDriver;
   /** Private rooms are joinable only by direct room-code entry; never browsed. */
   isPrivate: boolean;
   /** Unix ms when the host stopped being present (explicit leave or socket
@@ -170,6 +176,62 @@ export class RoomRegistry {
     return true;
   }
 
+  /** Add a synthetic bot player into an empty seat. Host-only, lobby-only. */
+  addBot(roomId: string, hostPlayerId: string, color: Color): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    if (room.hostId !== hostPlayerId) return false;
+    if (room.engine && room.engine.state.phase !== 'gameOver') return false;
+    const target = room.seats.find(s => s.color === color);
+    if (!target || target.player) return false;
+    const id = 'bot_' + nanoid(8);
+    const bot: Player = {
+      id,
+      // Display name; the web client substitutes the localized 'player.bot'
+      // string whenever rendering a player flagged isBot.
+      nickname: 'Computer',
+      connected: true,
+      isBot: true,
+    };
+    this.players.set(bot.id, bot);
+    target.player = bot;
+    target.ready = true;
+    return true;
+  }
+
+  /** Remove a bot from a seat. Host-only, lobby-only. */
+  removeBot(roomId: string, hostPlayerId: string, color: Color): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    if (room.hostId !== hostPlayerId) return false;
+    if (room.engine && room.engine.state.phase !== 'gameOver') return false;
+    const target = room.seats.find(s => s.color === color);
+    if (!target || !target.player || !target.player.isBot) return false;
+    const botId = target.player.id;
+    target.player = undefined;
+    target.ready = false;
+    this.players.delete(botId);
+    return true;
+  }
+
+  /** Toggle the autopilot flag for a seated human. */
+  setAutopilot(roomId: string, playerId: string, enabled: boolean): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    const seat = room.seats.find(s => s.player?.id === playerId);
+    if (!seat || !seat.player) return false;
+    if (seat.player.isBot) return false; // bots are always "on"
+    seat.player.autopilot = enabled;
+    return true;
+  }
+
+  /** True when the seat's occupant is a bot or has autopilot enabled. */
+  isSeatBot(room: Room, color: Color): boolean {
+    const s = room.seats.find(x => x.color === color);
+    if (!s || !s.player) return false;
+    return !!s.player.isBot || !!s.player.autopilot;
+  }
+
   setReady(roomId: string, playerId: string, ready: boolean): boolean {
     const room = this.rooms.get(roomId);
     if (!room) return false;
@@ -203,8 +265,21 @@ export class RoomRegistry {
     if (seated.length < 2) return false;
     if (!seated.every(s => s.ready || s.player?.id === room.hostId)) return false;
 
+    // Wrap the network callbacks so the bot driver also gets every commit.
     const seats = seated.map(s => s.color);
-    room.engine = new GameEngine(room.options, seats, questions, cb);
+    if (room.botDriver) room.botDriver.stop();
+    let driver: BotDriver | null = null;
+    const wrapped: EngineCallbacks = {
+      onState: (state) => { cb.onState(state); driver?.tick(state); },
+      onEvent: cb.onEvent,
+      onGameOver: cb.onGameOver,
+    };
+    room.engine = new GameEngine(room.options, seats, questions, wrapped);
+    driver = new BotDriver(room.engine, (color) => this.isSeatBot(room, color));
+    room.botDriver = driver;
+    // Engine constructor doesn't emit onState, so kick the driver explicitly
+    // with the initial state. Otherwise a bot-first opening turn would stall.
+    driver.tick(room.engine.state);
     return true;
   }
 
@@ -224,11 +299,22 @@ export class RoomRegistry {
     const seated = room.seats.filter(s => s.player);
     if (seated.length < 2) return false;
     const seats = seated.map(s => s.color);
-    room.engine = new GameEngine(room.options, seats, questions, cb);
+    if (room.botDriver) room.botDriver.stop();
+    let driver: BotDriver | null = null;
+    const wrapped: EngineCallbacks = {
+      onState: (state) => { cb.onState(state); driver?.tick(state); },
+      onEvent: cb.onEvent,
+      onGameOver: cb.onGameOver,
+    };
+    room.engine = new GameEngine(room.options, seats, questions, wrapped);
+    driver = new BotDriver(room.engine, (color) => this.isSeatBot(room, color));
+    room.botDriver = driver;
     // Auto-ready everyone since they explicitly chose to play again.
     for (const s of room.seats) {
       if (s.player) s.ready = true;
     }
+    // Kick the driver with the fresh initial state (see startGame).
+    driver.tick(room.engine.state);
     return true;
   }
 
@@ -244,8 +330,13 @@ export class RoomRegistry {
       }
     }
     this.playerToRoom.delete(playerId);
-    // GC empty rooms (no engine running).
-    if (!room.engine && room.seats.every(s => !s.player)) {
+    // GC empty rooms (no engine running). Treat seats holding only bots as
+    // empty — a room with no humans should not linger.
+    if (!room.engine && room.seats.every(s => !s.player || s.player.isBot)) {
+      // Drop any leftover bot player records before GCing the room.
+      for (const s of room.seats) {
+        if (s.player?.isBot) this.players.delete(s.player.id);
+      }
       this.rooms.delete(rid);
     }
   }
@@ -278,6 +369,7 @@ export class RoomRegistry {
   disbandRoom(roomId: string): { socketIds: string[]; playerIds: string[] } {
     const room = this.rooms.get(roomId);
     if (!room) return { socketIds: [], playerIds: [] };
+    if (room.botDriver) { room.botDriver.stop(); room.botDriver = undefined; }
     const socketIds: string[] = [];
     const playerIds: string[] = [];
     for (const seat of room.seats) {
@@ -285,6 +377,7 @@ export class RoomRegistry {
         if (seat.player.socketId) socketIds.push(seat.player.socketId);
         playerIds.push(seat.player.id);
         this.playerToRoom.delete(seat.player.id);
+        if (seat.player.isBot) this.players.delete(seat.player.id);
       }
     }
     this.rooms.delete(roomId);
@@ -314,6 +407,7 @@ export class RoomRegistry {
       connected: p.connected,
       isBot: p.isBot,
       avatar: p.avatar,
+      autopilot: p.autopilot,
     };
   }
 

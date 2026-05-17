@@ -5,6 +5,7 @@ import Board from './Board';
 import Hud from './Hud';
 import LogPanel from './LogPanel';
 import ActionPanel from './ActionPanel';
+import RoomInfo from './RoomInfo';
 import CombatModal from './CombatModal';
 import QAPrompt from './QAPrompt';
 import GameOverOverlay from './GameOverOverlay';
@@ -26,6 +27,7 @@ export default function Game() {
       </div>
       <aside className="game-side">
         <ActionPanel />
+        <RoomInfo />
         <Hud />
         <LogPanel />
       </aside>

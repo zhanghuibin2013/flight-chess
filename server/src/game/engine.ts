@@ -31,8 +31,9 @@ import {
   armRoll, cruiseLandingRoll, rollD6,
 } from './combat.js';
 import {
-  cellIdAtProgress, isAtHome, isInLandingStrip, isOnTakeoff,
-  LANDING_START_STEP, PATH_LEN_TO_HOME, planesOnCell, resolveJumpChain, stepBackward, stepForward,
+  isAtHome, isInLandingStrip, isOnTakeoff,
+  LANDING_START_STEP, planesOnCell, resolveJumpChain, stepBackward, stepForward,
+  cellIdAtProgress, findOvershootForeignStack,
 } from './rules.js';
 
 const MAX_LOG = 200;
@@ -72,14 +73,38 @@ type PendingCombat =
       attackerPlaneIndex: number;
       defenderPlaneIndices: number[];
       collisionCellId: number;
+      /** True when AAM was opened by the proactive 4-cell forward-range
+       *  trigger (rulebook 9.3) rather than by a same-cell collision.
+       *  Affects skip / defender-wins-no-counter outcomes — see
+       *  handleAamRespond comments. */
+      proactive?: boolean;
       step: AamStep;
       attackerRoll?: number;
       defenderRoll?: number;
       counterDefenderRoll?: number;
       counterAttackerRoll?: number;
     })
-  | (PendingCombatBase & { kind: 'arm'; targetRadarSpent: boolean })
-  | (PendingCombatBase & { kind: 'cruise'; targetPlaneIndex: number; targetCellId: number; landingShot: boolean });
+  | (PendingCombatBase & {
+      kind: 'arm';
+      /** ARM card already removed from hand; held here until the dice prompt resolves. */
+      missileCardId: string;
+    })
+  | (PendingCombatBase & {
+      kind: 'cruise';
+      missileCardId: string;
+      targetPlaneIndex: number;
+      targetCellId: number;
+      landingShot: boolean;
+    })
+  | {
+      kind: 'punishRetreat';
+      id: string;
+      /** Reuse `attacker`/`defender` naming for the union; for retreat the
+       *  acting seat goes into `attacker` only (defender unused). */
+      attacker: Color;
+      defender: Color;
+      planeIndex: number;
+    };
 
 interface PendingQA {
   questionId: string;
@@ -243,7 +268,7 @@ export class GameEngine {
 
   // ---------- Public API: rolling ----------
   rollDice(seat: Color) {
-    if (this.state.phase !== 'awaitRoll' || this.state.turn !== seat) return this.err('not your roll');
+    if (this.state.phase !== 'awaitRoll' || this.state.turn !== seat) return this.err('notYourRoll');
     const roll = rollD6();
     this.state.lastDice = roll;
     if (roll === 6) this.state.diceChain += 1;
@@ -294,10 +319,10 @@ export class GameEngine {
 
   // ---------- Takeoff ----------
   chooseTakeoff(seat: Color, planeIndex: number) {
-    if (this.state.turn !== seat) return this.err('not your turn');
-    if (this.state.phase !== 'awaitTakeoffChoice' && this.state.phase !== 'awaitMoveChoice') return this.err('cannot take off now');
+    if (this.state.turn !== seat) return this.err('notYourTurn');
+    if (this.state.phase !== 'awaitTakeoffChoice' && this.state.phase !== 'awaitMoveChoice') return this.err('cannotTakeoffNow');
     const plane = this.state.planes[seat][planeIndex];
-    if (!plane || plane.state !== 'hangar') return this.err('not a hangar plane');
+    if (!plane || plane.state !== 'hangar') return this.err('notHangarPlane');
     const takeoffCell = this.board.paths[seat].takeoff;
     plane.state = 'onBoard';
     plane.cellId = takeoffCell;
@@ -311,19 +336,56 @@ export class GameEngine {
 
   // ---------- Move ----------
   chooseMovePlane(seat: Color, planeIndex: number) {
-    if (this.state.turn !== seat) return this.err('not your turn');
-    if (this.state.phase !== 'awaitMoveChoice') return this.err('not in move phase');
+    if (this.state.turn !== seat) return this.err('notYourTurn');
+    if (this.state.phase !== 'awaitMoveChoice') return this.err('notInMovePhase');
     const roll = this.state.lastDice!;
     const plane = this.state.planes[seat][planeIndex];
-    if (!plane) return this.err('no such plane');
+    if (!plane) return this.err('noSuchPlane');
 
     if (plane.state === 'hangar') {
-      if (!this.state.options.takeoffNumbers.includes(roll)) return this.err('cannot take off on this roll');
+      if (!this.state.options.takeoffNumbers.includes(roll)) return this.err('cannotTakeoffOnRoll');
       this.chooseTakeoff(seat, planeIndex);
       return;
     }
-    if (plane.state !== 'onBoard') return this.err('plane is not movable');
+    if (plane.state !== 'onBoard') return this.err('planeNotMovable');
     if (plane.progress === undefined) plane.progress = 0;
+
+    // Per rulebook §5 (迭机): a foreign stack on the path acts as a roadblock
+    // when the move would overshoot it. Scanning happens *before* stepForward
+    // so we can perch (roll==6) or bounce-back (roll!=6) instead of advancing
+    // past the stack. Exact-landing-on-stack collisions are handled by
+    // handleStackAndCollision after stepForward as before.
+    plane.perched = false;
+    {
+      const overshoot = findOvershootForeignStack(
+        this.board, this.state.planes, seat, plane.progress, roll,
+      );
+      if (overshoot) {
+        const stackProgress = plane.progress + overshoot.distance;
+        if (roll === 6) {
+          // Perch on top of the foreign stack — wait until next turn to advance.
+          plane.progress = stackProgress;
+          plane.cellId = cellIdAtProgress(this.board, seat, stackProgress);
+          plane.perched = true;
+          this.logI18n('log.perched', { color: seat, enemy: overshoot.stackColor });
+          this.afterTurnAction(seat);
+          return;
+        }
+        // Non-6 roll: advance to the stack, then retreat the remaining steps.
+        const remaining = roll - overshoot.distance;
+        const back = stepBackward(this.board, seat, stackProgress, remaining);
+        plane.progress = back.progress;
+        plane.cellId = back.cellId;
+        this.logI18n('log.stackBounce', {
+          color: seat, enemy: overshoot.stackColor, n: remaining,
+        });
+        // The bounced-to cell may host a single enemy → collision; may also
+        // be a special cell or radar zone. Skip the active jump chain since
+        // the plane did not "actively fly" onto this cell (per §3.1 spec).
+        this.resolveLandingAndContinue(seat, planeIndex, { skipJumpChain: true });
+        return;
+      }
+    }
 
     // Apply forward step + bounce.
     const step = stepForward(this.board, seat, plane.progress, roll);
@@ -334,12 +396,20 @@ export class GameEngine {
     this.resolveLandingAndContinue(seat, planeIndex);
   }
 
-  private resolveLandingAndContinue(seat: Color, planeIndex: number) {
+  private resolveLandingAndContinue(
+    seat: Color, planeIndex: number,
+    options?: { skipJumpChain?: boolean },
+  ) {
     const plane = this.state.planes[seat][planeIndex]!;
     this.currentMoveEndedInCollision = false;
 
-    // Apply jump / shortcut chain (ring-only).
-    if (plane.cellId !== undefined && plane.progress !== undefined && plane.progress < LANDING_START_STEP) {
+    // Apply jump / shortcut chain (ring-only). Suppressed for passive moves
+    // (e.g. stack bounce-back) where the plane did not "actively fly" in.
+    if (
+      !options?.skipJumpChain &&
+      plane.cellId !== undefined && plane.progress !== undefined &&
+      plane.progress < LANDING_START_STEP
+    ) {
       const jr = resolveJumpChain(
         this.board, seat, plane.progress,
         (cellId) => planesOnCell(this.state.planes, cellId).length > 0,
@@ -372,9 +442,15 @@ export class GameEngine {
       if (this.state.phase === 'awaitQA') { this.commit(); return; }
     }
 
-    // Trigger SAM if plane passed through enemy radar zone (after all jumps).
+    // Trigger SAM if plane stopped on enemy radar zone (after all jumps).
     this.maybeTriggerSamForMove(seat, planeIndex);
     if (this.state.phase === 'awaitCombat') { this.commit(); return; }
+
+    // Proactive AAM (rulebook §9.3): if an enemy plane sits within 4 cells
+    // ahead (including both planes' cells, so 1..3 cells in front) and the
+    // attacker holds an AAM card, offer an optional pre-emptive duel.
+    this.maybeTriggerProactiveAam(seat, planeIndex);
+    if (this.pendingCombat) { this.commit(); return; }
 
     // End-of-action: extra roll if dice was 6 AND no other prompt is pending.
     this.afterTurnAction(seat);
@@ -397,8 +473,8 @@ export class GameEngine {
     for (const e of enemies) (enemyByColor[e.color] ||= []).push(e.index);
     const stackedEnemyColor = Object.keys(enemyByColor).find(c => (enemyByColor[c]!).length >= 2);
 
-    // Optional perch rule: A approaches B's stack with a 6-roll.
-    if (opts.enablePerch && roll === 6 && stackedEnemyColor) {
+    // Perch rule (rulebook): A approaches B's stack with a 6-roll → perch.
+    if (roll === 6 && stackedEnemyColor) {
       // Perch on top, advance next turn.
       plane.perched = true;
       this.logI18n('log.perched', { color: seat, enemy: stackedEnemyColor });
@@ -419,10 +495,10 @@ export class GameEngine {
       targets = enemies.map(e => ({ color: e.color, index: e.index }));
     }
 
-    // Optional AAM duel: if attacker has an AAM card and the option is on,
-    // open the duel prompt against the first target. Otherwise, collision is
-    // immediate — both sides go straight back to hangar.
-    if (opts.enableAamDuel && this.state.hands[seat].missiles.some(m => m.kind === 'aam')) {
+    // AAM duel: if attacker has an AAM card, open the duel prompt against
+    // the first target. Otherwise, collision is immediate — both sides go
+    // straight back to hangar.
+    if (this.state.hands[seat].missiles.some(m => m.kind === 'aam')) {
       const t = targets[0]!;
       this.openAamPrompt(seat, planeIndex, t.color, [t.index], cellId);
     } else {
@@ -459,6 +535,7 @@ export class GameEngine {
   private openAamPrompt(
     attacker: Color, attackerIdx: number,
     defender: Color, defenderIdxs: number[], cellId: number,
+    proactive = false,
   ) {
     const id = nanoid(6);
     this.pendingCombat = {
@@ -466,20 +543,23 @@ export class GameEngine {
       attackerPlaneIndex: attackerIdx,
       defenderPlaneIndices: defenderIdxs,
       collisionCellId: cellId,
+      proactive,
       step: 'fireDecision',
     };
     this.state.phase = 'awaitCombat';
     this.state.prompts = [{
       kind: 'combat', seat: attacker, combatId: id,
-      description: `Collision with ${defender}. Launch AAM?`,
-      descriptionKey: 'combat.aamPrompt',
+      description: proactive
+        ? `Enemy ${defender} in range — fire AAM?`
+        : `Collision with ${defender}. Launch AAM?`,
+      descriptionKey: proactive ? 'combat.aamProactivePrompt' : 'combat.aamPrompt',
       descriptionParams: { defender },
       options: ['fire', 'skip'],
     }];
   }
 
   combatRespond(seat: Color, combatId: string, choice: string, data?: Record<string, unknown>) {
-    if (!this.pendingCombat || this.pendingCombat.id !== combatId) return this.err('no such combat');
+    if (!this.pendingCombat || this.pendingCombat.id !== combatId) return this.err('noSuchCombat');
     const pc = this.pendingCombat;
 
     if (pc.kind === 'aam') {
@@ -488,9 +568,9 @@ export class GameEngine {
     }
 
     if (pc.kind === 'sam') {
-      if (seat !== pc.defender) return this.err('not your SAM');
+      if (seat !== pc.defender) return this.err('notYourSam');
       if (choice === 'fire') {
-        if (!this.spendMissile(pc.defender, 'sam')) return this.err('no sam');
+        if (!this.spendMissile(pc.defender, 'sam')) return this.err('noSam');
         const target = this.state.planes[pc.attacker][pc.planeIndex]!;
         // Shield?
         if (this.state.hands[pc.attacker].shield) {
@@ -508,7 +588,59 @@ export class GameEngine {
       return;
     }
 
-    return this.err('unhandled combat kind');
+    if (pc.kind === 'arm') {
+      // Per spec the attacker performs the dice roll explicitly.
+      if (seat !== pc.attacker) return this.err('notYourRoll');
+      if (choice !== 'roll') return this.err('badChoice');
+      const r = armRoll();
+      this.cb.onEvent({ kind: 'dice', seat: pc.attacker, value: r.roll, chain: 0 });
+      this.logI18n('log.armFire', { attacker: pc.attacker, defender: pc.defender, n: r.roll });
+      if (r.success) {
+        if (this.state.hands[pc.defender].radars > 0) {
+          this.state.hands[pc.defender].radars -= 1;
+        }
+        this.logI18n('log.armSuccess', { color: pc.defender, n: this.state.hands[pc.defender].radars });
+      } else {
+        this.logI18n('log.armMiss');
+      }
+      this.pendingCombat = null;
+      this.afterCombatResolved();
+      return;
+    }
+
+    if (pc.kind === 'cruise') {
+      if (seat !== pc.attacker) return this.err('notYourRoll');
+      if (choice !== 'roll') return this.err('badChoice');
+      const r = cruiseLandingRoll();
+      this.cb.onEvent({ kind: 'dice', seat: pc.attacker, value: r.roll, chain: 0 });
+      this.logI18n('log.cruiseLandingRoll', { n: r.roll });
+      if (r.success) {
+        const dp = this.state.planes[pc.defender][pc.targetPlaneIndex];
+        if (dp && dp.state === 'onBoard') {
+          this.returnToHangar(dp);
+          this.logI18n('log.cruiseHit', { color: pc.defender, n: pc.targetPlaneIndex + 1 });
+        }
+      } else {
+        this.logI18n('log.cruiseMiss');
+      }
+      this.pendingCombat = null;
+      this.afterCombatResolved();
+      return;
+    }
+
+    if (pc.kind === 'punishRetreat') {
+      if (seat !== pc.attacker) return this.err('notYourRoll');
+      if (choice !== 'roll') return this.err('badChoice');
+      const r = rollD6();
+      this.cb.onEvent({ kind: 'dice', seat: pc.attacker, value: r, chain: 0 });
+      this.logI18n('log.retreats', { color: pc.attacker, n: r });
+      this.retreatLastMovedPlane(pc.attacker, r);
+      this.pendingCombat = null;
+      this.afterCombatResolved();
+      return;
+    }
+
+    return this.err('unhandledCombat');
   }
 
   /**
@@ -524,16 +656,23 @@ export class GameEngine {
     const defIdx = defenderPlaneIndices[0]!;
 
     if (pc.step === 'fireDecision') {
-      if (seat !== attacker) return this.err('not your decision');
+      if (seat !== attacker) return this.err('notYourDecision');
       if (choice === 'skip') {
-        // Decline to fire AAM — fall back to plain collision.
+        // Decline to fire AAM. For collision-AAM, fall back to plain
+        // collision (both retreat). For proactive AAM (rulebook 9.3 — fired
+        // pre-emptively against a plane within 4 forward cells), the move
+        // simply continues with no effect.
         this.pendingCombat = null;
-        this.applyCollision(attacker, attackerPlaneIndex, [{ color: defender, index: defIdx }]);
-        this.afterCombatResolved();
+        if (pc.proactive) {
+          this.afterCombatResolved();
+        } else {
+          this.applyCollision(attacker, attackerPlaneIndex, [{ color: defender, index: defIdx }]);
+          this.afterCombatResolved();
+        }
         return;
       }
       if (choice === 'fire') {
-        if (!this.spendMissile(attacker, 'aam')) return this.err('no aam');
+        if (!this.spendMissile(attacker, 'aam')) return this.err('noAam');
         this.logI18n('log.aamDuel', { attacker, defender });
         pc.step = 'attackerRoll';
         this.state.prompts = [{
@@ -546,12 +685,12 @@ export class GameEngine {
         this.commit();
         return;
       }
-      return this.err('bad choice');
+      return this.err('badChoice');
     }
 
     if (pc.step === 'attackerRoll') {
-      if (seat !== attacker) return this.err('not your roll');
-      if (choice !== 'roll') return this.err('bad choice');
+      if (seat !== attacker) return this.err('notYourRoll');
+      if (choice !== 'roll') return this.err('badChoice');
       const r = rollD6();
       pc.attackerRoll = r;
       this.cb.onEvent({ kind: 'dice', seat: attacker, value: r, chain: 0 });
@@ -569,8 +708,8 @@ export class GameEngine {
     }
 
     if (pc.step === 'defenderRoll') {
-      if (seat !== defender) return this.err('not your roll');
-      if (choice !== 'roll') return this.err('bad choice');
+      if (seat !== defender) return this.err('notYourRoll');
+      if (choice !== 'roll') return this.err('badChoice');
       const r = rollD6();
       pc.defenderRoll = r;
       this.cb.onEvent({ kind: 'dice', seat: defender, value: r, chain: 0 });
@@ -604,26 +743,37 @@ export class GameEngine {
         this.commit();
         return;
       }
-      // No AAM available to counter: attacker is shot down.
-      this.returnToHangar(this.state.planes[attacker][attackerPlaneIndex]!);
-      this.logI18n('log.returnHangar', { color: attacker, n: attackerPlaneIndex + 1 });
+      // No AAM available to counter. Per rulebook 9.3, only B's successful
+      // *counter* can shoot A down. Without an AAM in B's hand the duel ends
+      // here: the proactive variant has no further effect; the collision
+      // variant still resolves as a regular collision (both planes retreat).
       this.pendingCombat = null;
+      if (pc.proactive) {
+        this.logI18n('log.aamDefenderHoldsFire', { color: defender });
+      } else {
+        this.applyCollision(attacker, attackerPlaneIndex, [{ color: defender, index: defIdx }]);
+      }
       this.afterCombatResolved();
       return;
     }
 
     if (pc.step === 'counterDecision') {
-      if (seat !== defender) return this.err('not your decision');
+      if (seat !== defender) return this.err('notYourDecision');
       if (choice === 'skip') {
-        // Defender declines counter — primary defense still wins, attacker returns.
-        this.returnToHangar(this.state.planes[attacker][attackerPlaneIndex]!);
-        this.logI18n('log.returnHangar', { color: attacker, n: attackerPlaneIndex + 1 });
+        // Defender declines counter — primary defense still wins. Proactive:
+        // attacker just stays put. Collision: rule 7 collision applies, both
+        // retreat to hangar.
         this.pendingCombat = null;
+        if (pc.proactive) {
+          this.logI18n('log.aamDefenderHoldsFire', { color: defender });
+        } else {
+          this.applyCollision(attacker, attackerPlaneIndex, [{ color: defender, index: defIdx }]);
+        }
         this.afterCombatResolved();
         return;
       }
       if (choice === 'counter') {
-        if (!this.spendMissile(defender, 'aam')) return this.err('no aam');
+        if (!this.spendMissile(defender, 'aam')) return this.err('noAam');
         this.logI18n('log.counterAam', { defender, attacker });
         pc.step = 'counterDefenderRoll';
         this.state.prompts = [{
@@ -636,12 +786,12 @@ export class GameEngine {
         this.commit();
         return;
       }
-      return this.err('bad choice');
+      return this.err('badChoice');
     }
 
     if (pc.step === 'counterDefenderRoll') {
-      if (seat !== defender) return this.err('not your roll');
-      if (choice !== 'roll') return this.err('bad choice');
+      if (seat !== defender) return this.err('notYourRoll');
+      if (choice !== 'roll') return this.err('badChoice');
       const r = rollD6();
       pc.counterDefenderRoll = r;
       this.cb.onEvent({ kind: 'dice', seat: defender, value: r, chain: 0 });
@@ -659,8 +809,8 @@ export class GameEngine {
     }
 
     if (pc.step === 'counterAttackerRoll') {
-      if (seat !== attacker) return this.err('not your roll');
-      if (choice !== 'roll') return this.err('bad choice');
+      if (seat !== attacker) return this.err('notYourRoll');
+      if (choice !== 'roll') return this.err('badChoice');
       const r = rollD6();
       pc.counterAttackerRoll = r;
       this.cb.onEvent({ kind: 'dice', seat: attacker, value: r, chain: 0 });
@@ -682,7 +832,7 @@ export class GameEngine {
       return;
     }
 
-    return this.err('unhandled aam step');
+    return this.err('unhandledAamStep');
   }
 
   private afterCombatResolved() {
@@ -733,8 +883,8 @@ export class GameEngine {
   }
 
   qaAnswer(seat: Color, questionId: string, answerIndex: number) {
-    if (!this.pendingQA || this.pendingQA.questionId !== questionId) return this.err('no qa');
-    if (seat !== this.pendingQA.seat) return this.err('not your qa');
+    if (!this.pendingQA || this.pendingQA.questionId !== questionId) return this.err('noQa');
+    if (seat !== this.pendingQA.seat) return this.err('notYourQa');
     const correct = answerIndex === this.pendingQA.question.answerIndex;
     this.questions.discard(this.pendingQA.question);
     this.pendingQA = null;
@@ -744,6 +894,13 @@ export class GameEngine {
     } else {
       this.logI18n('log.qaWrong', { color: seat });
       this.applyDrawnPunishment(seat);
+    }
+    // Punishment may set up a pending combat (e.g. rerollBwd dice prompt).
+    // In that case, keep phase=awaitCombat and let combatRespond drive the
+    // turn forward — do NOT advance here.
+    if (this.pendingCombat) {
+      this.commit();
+      return;
     }
     this.state.prompts = [];
     if (this.state.phase === 'awaitQA') this.state.phase = 'resolving';
@@ -831,13 +988,27 @@ export class GameEngine {
 
   private applyTriggerPunishment(seat: Color, card: PunishmentCard) {
     switch (card.kind) {
-      case 'rerollBwd':
-        // Special: roll d6 immediately and retreat.
-        const r = rollD6();
-        this.cb.onEvent({ kind: 'dice', seat, value: r, chain: 0 });
-        this.logI18n('log.retreats', { color: seat, n: r });
-        this.retreatLastMovedPlane(seat, r);
+      case 'rerollBwd': {
+        // Spec requires an explicit dice roll for the retreat. Defer to a
+        // combat-style prompt addressed to the punished player; the dice
+        // resolution + retreat happens inside combatRespond('roll').
+        const target = this.findRecentMovedPlane(seat);
+        if (!target) break;
+        const id = nanoid(6);
+        this.pendingCombat = {
+          id, kind: 'punishRetreat', attacker: seat, defender: seat,
+          planeIndex: target.index,
+        };
+        this.state.phase = 'awaitCombat';
+        this.state.prompts = [{
+          kind: 'combat', seat, combatId: id,
+          description: `Roll the dice to retreat`,
+          descriptionKey: 'combat.punishRetreatRoll',
+          descriptionParams: { color: seat },
+          options: ['roll'],
+        }];
         break;
+      }
       case 'bwd2': this.retreatLastMovedPlane(seat, 2); break;
       case 'bwd4': this.retreatLastMovedPlane(seat, 4); break;
       case 'bwd6': this.retreatLastMovedPlane(seat, 6); break;
@@ -889,7 +1060,7 @@ export class GameEngine {
     seat: Color, cardId: CardId,
     targetColor?: Color, targetPlaneIndex?: number, targetRadarIndex?: number,
   ) {
-    if (this.state.turn !== seat) return this.err('not your turn');
+    if (this.state.turn !== seat) return this.err('notYourTurn');
     const hand = this.state.hands[seat];
 
     // Held reward: enemySkip
@@ -904,7 +1075,7 @@ export class GameEngine {
         this.commit();
         return;
       }
-      return this.err('cannot play this reward now');
+      return this.err('cannotPlayReward');
     }
 
     // Held missile / arm / cruise / aam are played from missiles
@@ -912,38 +1083,63 @@ export class GameEngine {
     if (mi >= 0) {
       const card = hand.missiles[mi]!;
       if (card.kind === 'arm') {
-        if (!targetColor || targetColor === seat) return this.err('arm needs enemy target');
+        if (!targetColor || targetColor === seat) return this.err('armNeedsTarget');
         return this.playArm(seat, mi, targetColor);
       }
       if (card.kind === 'cruise') {
-        if (!targetColor || targetColor === seat || targetPlaneIndex === undefined) return this.err('cruise needs enemy plane target');
+        if (!targetColor || targetColor === seat || targetPlaneIndex === undefined) return this.err('cruiseNeedsTarget');
         return this.playCruise(seat, mi, targetColor, targetPlaneIndex);
       }
       // aam/sam: only used reactively in combat, not played from hand.
-      return this.err('cannot play this missile directly');
+      return this.err('cannotPlayMissileDirect');
     }
 
-    return this.err('card not found');
+    return this.err('cardNotFound');
   }
 
   private playArm(attacker: Color, missileIdx: number, defender: Color) {
-    if (this.state.hands[defender].radars <= 0) return this.err('target has no radars');
-    const m = this.state.hands[attacker].missiles.splice(missileIdx, 1)[0]!;
-    const r = armRoll();
-    this.logI18n('log.armFire', { attacker, defender, n: r.roll });
-    if (r.success) {
-      this.state.hands[defender].radars -= 1;
-      this.logI18n('log.armSuccess', { color: defender, n: this.state.hands[defender].radars });
-    } else {
-      this.logI18n('log.armMiss');
+    if (this.state.hands[defender].radars <= 0) return this.err('targetNoRadars');
+    // Shield absorbs the ARM strike before the dice roll (mirrors SAM/Cruise).
+    if (this.state.hands[defender].shield) {
+      this.state.hands[defender].shield = false;
+      const m = this.state.hands[attacker].missiles.splice(missileIdx, 1)[0]!;
+      this.missileDeck.discard(m);
+      this.logI18n('log.armShielded', { color: defender });
+      this.commit();
+      return;
     }
+    // Hold the ARM card aside for the dice prompt — the spec requires a
+    // dice roll (5 or 6 = success) and we now ask the attacker to perform
+    // it explicitly via a combat prompt instead of auto-rolling.
+    const m = this.state.hands[attacker].missiles.splice(missileIdx, 1)[0]!;
+    const id = nanoid(6);
+    this.pendingCombat = {
+      id, kind: 'arm', attacker, defender,
+      missileCardId: m.id,
+    };
+    // Park the spent card on the deck's discard so totals stay correct
+    // even if the player navigates away mid-prompt.
     this.missileDeck.discard(m);
+    this.state.phase = 'awaitCombat';
+    this.state.prompts = [{
+      kind: 'combat', seat: attacker, combatId: id,
+      description: `Roll the ARM die (5/6 hits)`,
+      descriptionKey: 'combat.armRoll',
+      descriptionParams: { attacker, defender },
+      options: ['roll'],
+    }];
     this.commit();
   }
 
   private playCruise(attacker: Color, missileIdx: number, defender: Color, defPlaneIdx: number) {
     const dp = this.state.planes[defender][defPlaneIdx];
-    if (!dp || dp.state !== 'onBoard') return this.err('target not on board');
+    if (!dp || dp.state !== 'onBoard') return this.err('targetNotOnBoard');
+    const onTakeoff = isOnTakeoff(dp.progress!);
+    const inLanding = isInLandingStrip(dp.progress!);
+    if (!onTakeoff && !inLanding) return this.err('cruiseTargetInvalid');
+
+    // Shield consumed even before the dice prompt — the act of launching
+    // a cruise missile drains the defender's shield (mirrors SAM behavior).
     if (this.state.hands[defender].shield) {
       this.state.hands[defender].shield = false;
       const m = this.state.hands[attacker].missiles.splice(missileIdx, 1)[0]!;
@@ -952,25 +1148,35 @@ export class GameEngine {
       this.commit();
       return;
     }
-    const onTakeoff = isOnTakeoff(dp.progress!);
-    const inLanding = isInLandingStrip(dp.progress!);
-    if (!onTakeoff && !inLanding) return this.err('cruise can only target takeoff or landing-strip planes');
 
     const m = this.state.hands[attacker].missiles.splice(missileIdx, 1)[0]!;
     if (onTakeoff) {
+      // Takeoff target is auto-success per spec — no roll required.
       this.returnToHangar(dp);
       this.logI18n('log.cruiseTakeoffHit', { color: defender, n: defPlaneIdx + 1 });
-    } else {
-      const r = cruiseLandingRoll();
-      this.logI18n('log.cruiseLandingRoll', { n: r.roll });
-      if (r.success) {
-        this.returnToHangar(dp);
-        this.logI18n('log.cruiseHit', { color: defender, n: defPlaneIdx + 1 });
-      } else {
-        this.logI18n('log.cruiseMiss');
-      }
+      this.missileDeck.discard(m);
+      this.commit();
+      return;
     }
+    // Landing-strip target requires a dice roll (4/5/6 = success). Defer to
+    // an interactive prompt addressed to the attacker.
+    const id = nanoid(6);
+    this.pendingCombat = {
+      id, kind: 'cruise', attacker, defender,
+      missileCardId: m.id,
+      targetPlaneIndex: defPlaneIdx,
+      targetCellId: dp.cellId!,
+      landingShot: true,
+    };
     this.missileDeck.discard(m);
+    this.state.phase = 'awaitCombat';
+    this.state.prompts = [{
+      kind: 'combat', seat: attacker, combatId: id,
+      description: `Roll the cruise die (4/5/6 hits)`,
+      descriptionKey: 'combat.cruiseRoll',
+      descriptionParams: { attacker, defender },
+      options: ['roll'],
+    }];
     this.commit();
   }
 
@@ -980,18 +1186,22 @@ export class GameEngine {
     if (plane.state !== 'onBoard' || plane.cellId === undefined) return;
     if (isInLandingStrip(plane.progress!)) return; // landing strip immune to SAM
 
+    // Per the rulebook, "飞过本方防空识别区" means the attacker's plane stops
+    // on a cell inside the defender's radar zone — not merely crosses it.
+    // Only the final cell is checked.
+    const cellId = plane.cellId;
     for (const def of this.playerSeats) {
       if (def === attacker) continue;
       const radars = this.state.hands[def].radars;
       const zoneCells = this.board.paths[def].radarZone.slice(0, radarZoneSize(radars));
       if (zoneCells.length === 0) continue;
-      if (!zoneCells.includes(plane.cellId)) continue;
+      if (!zoneCells.includes(cellId)) continue;
       // Defender has SAM in hand?
       if (!this.state.hands[def].missiles.some(m => m.kind === 'sam')) continue;
       const id = nanoid(6);
       this.pendingCombat = {
         id, kind: 'sam', attacker, defender: def,
-        planeIndex, passedCellIds: [plane.cellId],
+        planeIndex, passedCellIds: [cellId],
       };
       this.state.phase = 'awaitCombat';
       this.state.prompts = [{
@@ -1001,6 +1211,38 @@ export class GameEngine {
         descriptionParams: { attacker },
         options: ['fire', 'skip'],
       }];
+      return;
+    }
+  }
+
+  // ---------- Proactive AAM (rulebook §9.3) ----------
+  /**
+   * Open an AAM duel prompt when, after movement resolves, an enemy plane sits
+   * within 4 cells (including both planes' cells) directly ahead on the
+   * attacker's path. With "both cells inclusive" the practical forward window
+   * is 1..3 ring cells past the attacker. The duel is optional — if the
+   * attacker skips, the move simply continues with no effect (no collision).
+   */
+  private maybeTriggerProactiveAam(attacker: Color, planeIndex: number) {
+    const plane = this.state.planes[attacker][planeIndex]!;
+    if (plane.state !== 'onBoard' || plane.cellId === undefined || plane.progress === undefined) return;
+    if (isInLandingStrip(plane.progress) || isAtHome(plane.progress)) return;
+    if (!this.state.hands[attacker].missiles.some(m => m.kind === 'aam')) return;
+
+    // Scan forward 1..3 ring cells. Stop at the landing strip — proactive AAM
+    // does not reach into protected airspace.
+    for (let k = 1; k <= 3; k++) {
+      const fp = plane.progress + k;
+      if (fp >= LANDING_START_STEP) break;
+      const targetCellId = cellIdAtProgress(this.board, attacker, fp);
+      const occupants = planesOnCell(this.state.planes, targetCellId)
+        .filter(o => o.color !== attacker);
+      if (occupants.length === 0) continue;
+      const t = occupants[0]!;
+      // A defender already in their own landing strip / home cannot be
+      // targeted; planesOnCell only returns onBoard planes, but the strip
+      // check is implied because their cells differ from ring cells.
+      this.openAamPrompt(attacker, planeIndex, t.color, [t.index], targetCellId, true);
       return;
     }
   }

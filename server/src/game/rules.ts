@@ -215,3 +215,49 @@ export function planesOnCell(
   }
   return out;
 }
+
+/** True iff `cellId` hosts a foreign stack (>=2 planes of the same non-`color`). */
+export function hasForeignStackOnCell(
+  planes: Record<Color, Plane[]>,
+  color: Color,
+  cellId: number,
+): { stackColor: Color } | null {
+  for (const c of Object.keys(planes) as Color[]) {
+    if (c === color) continue;
+    let n = 0;
+    for (const p of planes[c]) {
+      if (p.state === 'onBoard' && p.cellId === cellId) n++;
+    }
+    if (n >= 2) return { stackColor: c };
+  }
+  return null;
+}
+
+/**
+ * Per rulebook §5, scan A's forward path for the first foreign stack the move
+ * would *overshoot*. Returns the distance `k` (1..steps-1) and the stack's
+ * color, or null when no foreign stack lies strictly between current position
+ * and the natural endpoint. The natural-endpoint cell itself is excluded —
+ * landing exactly on a stack is a regular collision (§5 last sentence) and is
+ * handled by the caller.
+ *
+ * Own stacks are skipped ("自己迭机不影响自己继续行进"). The scan stops at the
+ * landing strip since foreign planes cannot be there.
+ */
+export function findOvershootForeignStack(
+  board: BuiltBoard,
+  planes: Record<Color, Plane[]>,
+  color: Color,
+  fromProgress: number,
+  steps: number,
+): { distance: number; stackColor: Color } | null {
+  for (let k = 1; k < steps; k++) {
+    const p = fromProgress + k;
+    if (p >= LANDING_START_STEP) break;
+    if (p > PATH_LEN_TO_HOME) break;
+    const cellId = cellIdAtProgress(board, color, p);
+    const hit = hasForeignStackOnCell(planes, color, cellId);
+    if (hit) return { distance: k, stackColor: hit.stackColor };
+  }
+  return null;
+}

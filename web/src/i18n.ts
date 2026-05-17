@@ -85,11 +85,7 @@ const ZH: Dict = {
   'room.victory.allHome':   '率先全部 4 架飞机回家',
   'room.victory.timed':     '限时赛 — 时间到时回家最多者胜',
   'room.collisionAllEnemies':     '撞机时全部敌机回库',
-  'room.collisionAllEnemiesHint': '关闭后：若撞上对方机叠，仅其中一架回库（旧规则）',
-  'room.enableAamDuel':           '启用空空对决',
-  'room.enableAamDuelHint':       '开启后：进攻方持有空空导弹时，撞机前可选择对决；关闭后撞机直接退回停机坪',
-  'room.enablePerch':             '启用 6 点叠停规则',
-  'room.enablePerchHint':         '开启后：投出 6 点正好停在敌机叠上时，本机叠停在其上方；关闭后直接撞机',
+  'room.collisionAllEnemiesHint': '默认关闭（说明书规则）：若撞上对方机叠，仅其中一架回库；开启后，整叠敌机一起回库',
   'room.ready':             '准备',
   'room.unready':           '取消准备',
   'room.start':             '开始游戏',
@@ -98,6 +94,9 @@ const ZH: Dict = {
   'room.hostLeft':          '房主已离开，等待回来…',
   'room.hostLeftCountdown': '若 {s} 秒内房主未回到房间，房间将被解散。',
   'room.disbanded':         '房主在限定时间内未回来，房间已解散。',
+
+  // Room-info side panel (in-game)
+  'roomInfo.title':         '房间信息',
 
   // Game
   'game.loading':           '加载游戏中…',
@@ -167,6 +166,7 @@ const ZH: Dict = {
   'log.jumped':             '{color} 在同色格子跳跃',
   'log.reachedHome':        '{color} 的 #{n} 号机抵达基地',
   'log.perched':            '{color} 叠停在 {enemy} 的机叠之上',
+  'log.stackBounce':        '{color} 行进至 {enemy} 机叠后倒退 {n} 步',
   'log.collision':          '碰撞：{color} #{n} 撞上 {list} — 全部回库',
   'log.aamDuel':            '空空导弹对决：进攻方 {attacker} vs 防守方 {defender}',
   'log.aamRoll':            '{color} 在空战中掷出 {n}',
@@ -197,6 +197,8 @@ const ZH: Dict = {
   'log.cruiseLandingRoll':  '巡航攻击降落带 — 掷出 {n}',
   'log.cruiseHit':          '巡航命中 — {color} #{n} 返回机库',
   'log.cruiseMiss':         '巡航未命中',
+  'log.armShielded':        '{color} 用护盾抵挡了反辐射导弹',
+  'log.aamDefenderHoldsFire':'{color} 选择不反击 — 进攻方继续移动',
   'log.drewCard':           '{color} 抽了一张牌',
   'log.gameOver':           '游戏结束 — 获胜者：{list}',
   'log.engineError':        '引擎错误：{msg}',
@@ -204,6 +206,7 @@ const ZH: Dict = {
   // Combat / QA
   'combat.title':           '战斗',
   'combat.aamPrompt':       '与 {defender} 发生碰撞，是否发射空空导弹？',
+  'combat.aamProactivePrompt':'前方 4 格内出现 {defender} 的飞机，是否发射空空导弹？',
   'combat.samPrompt':       '敌机 {attacker} 进入你的雷达区 — 是否发射地空导弹？',
   'combat.counterAamPrompt':'反击空空：与 {attacker} 对决，选择应对方式。',
   'combat.aam.attackerRoll':'空空对决 — {attacker}（进攻方）请掷骰。',
@@ -211,6 +214,9 @@ const ZH: Dict = {
   'combat.aam.counterDecision':'防御成功（{attackerRoll} vs {defenderRoll}）。是否消耗一发空空导弹反击 {attacker}？',
   'combat.aam.counterDefenderRoll':'反击 — {defender}（防守方）请掷骰。',
   'combat.aam.counterAttackerRoll':'反击 — 防守方掷出 {counterDefenderRoll}，{attacker}（进攻方）请掷骰。',
+  'combat.armRoll':         '反辐射轰炸 — {attacker} 对 {defender} 的雷达发起攻击，请掷骰（5/6 命中）。',
+  'combat.cruiseRoll':      '巡航轰炸降落带 — {attacker} 攻击 {defender}，请掷骰（4/5/6 命中）。',
+  'combat.punishRetreatRoll':'惩罚卡：再掷一次骰子并按点数后退，请掷骰。',
   'combat.opt.fire':        '发射',
   'combat.opt.skip':        '不打',
   'combat.opt.roll':        '掷骰',
@@ -260,6 +266,41 @@ const ZH: Dict = {
   'punishment.selfSkip':    '跳过一回合',
   'punishment.loseMissile': '损失导弹',
   'punishment.loseRadar':   '损失雷达',
+
+  // Engine error codes (returned by err() / sendErr / S2C.Error).
+  'errcode.notYourRoll':            '现在不是你的掷骰回合',
+  'errcode.notYourTurn':            '现在不是你的回合',
+  'errcode.notYourDecision':        '该决定不属于你',
+  'errcode.notYourSam':             '该地空导弹不属于你',
+  'errcode.notYourQa':              '该题目不属于你',
+  'errcode.cannotTakeoffNow':       '当前阶段不能起飞',
+  'errcode.cannotTakeoffOnRoll':    '此点数不可起飞',
+  'errcode.notHangarPlane':         '该飞机不在停机坪',
+  'errcode.notInMovePhase':         '当前阶段无法移动',
+  'errcode.noSuchPlane':            '没有这架飞机',
+  'errcode.planeNotMovable':        '该飞机无法移动',
+  'errcode.noSuchCombat':           '没有这场战斗',
+  'errcode.noSam':                  '没有地空导弹',
+  'errcode.noAam':                  '没有空空导弹',
+  'errcode.noQa':                   '没有进行中的答题',
+  'errcode.badChoice':              '无效选项',
+  'errcode.unhandledCombat':        '未知战斗类型',
+  'errcode.unhandledAamStep':       '未知空战阶段',
+  'errcode.cannotPlayReward':       '当前不能使用该奖励卡',
+  'errcode.armNeedsTarget':         '反辐射导弹需要选择敌方目标',
+  'errcode.cruiseNeedsTarget':      '巡航导弹需要选择敌方飞机',
+  'errcode.cannotPlayMissileDirect':'该导弹不能直接打出',
+  'errcode.cardNotFound':           '未找到该卡牌',
+  'errcode.targetNoRadars':         '目标没有可摧毁的雷达',
+  'errcode.targetNotOnBoard':       '目标飞机不在场上',
+  'errcode.cruiseTargetInvalid':    '巡航导弹只能攻击起飞位或降落带的飞机',
+  // Network / room codes
+  'errcode.BAD_PAYLOAD':            '请求数据无效',
+  'errcode.NO_SESSION':             '会话已失效，请重新登录',
+  'errcode.NO_PLAYER':              '玩家不存在',
+  'errcode.NO_ROOM':                '房间不存在',
+  'errcode.CANT_START':             '当前无法开始游戏',
+  'errcode.CANT_RESTART':           '当前无法重开游戏',
 };
 
 const EN: Dict = {
@@ -325,11 +366,7 @@ const EN: Dict = {
   'room.victory.allHome':   'First to land ALL 4 planes home',
   'room.victory.timed':     'Timed — most planes home when time is up',
   'room.collisionAllEnemies':     'Collision returns all enemies on cell',
-  'room.collisionAllEnemiesHint': 'Off: only one of an enemy stack returns (legacy rule).',
-  'room.enableAamDuel':           'Enable AAM duel on collision',
-  'room.enableAamDuelHint':       'On: attackers holding an AAM may declare a duel before collision. Off: collisions are always immediate retreat.',
-  'room.enablePerch':             'Enable perch on roll-6',
-  'room.enablePerchHint':         'On: a 6 that lands exactly on an enemy stack perches on top instead of colliding. Off: always collide.',
+  'room.collisionAllEnemiesHint': 'Default off (rulebook): only one of an enemy stack returns. On: the entire enemy stack returns to hangar.',
   'room.ready':             'Ready',
   'room.unready':           'Unready',
   'room.start':             'Start Game',
@@ -338,6 +375,9 @@ const EN: Dict = {
   'room.hostLeft':          'Host has left. Waiting for them to come back…',
   'room.hostLeftCountdown': 'Room will be disbanded in {s}s if the host does not return.',
   'room.disbanded':         'Host did not come back in time — the room has been disbanded.',
+
+  // Room-info side panel (in-game)
+  'roomInfo.title':         'Room Info',
 
   // Game
   'game.loading':           'Loading game…',
@@ -407,6 +447,7 @@ const EN: Dict = {
   'log.jumped':             '{color} jumped on a same-color cell',
   'log.reachedHome':        "{color}'s plane #{n} reached home",
   'log.perched':            "{color} perched on top of {enemy}'s stack",
+  'log.stackBounce':        "{color} reached {enemy}'s stack and retreated {n} step(s)",
   'log.collision':          'Collision: {color}#{n} vs {list} — all return to hangar',
   'log.aamDuel':            'AAM duel: attacker {attacker} vs defender {defender}',
   'log.aamRoll':            '{color} rolled {n} in the AAM duel',
@@ -437,6 +478,8 @@ const EN: Dict = {
   'log.cruiseLandingRoll':  'Cruise vs landing strip — rolled {n}',
   'log.cruiseHit':          'Cruise hit — {color}#{n} returns to hangar',
   'log.cruiseMiss':         'Cruise missed',
+  'log.armShielded':        '{color} shielded the ARM strike',
+  'log.aamDefenderHoldsFire':'{color} held fire — attacker continues',
   'log.drewCard':           '{color} drew a card',
   'log.gameOver':           'Game over — winners: {list}',
   'log.engineError':        'engine error: {msg}',
@@ -444,6 +487,7 @@ const EN: Dict = {
   // Combat / QA
   'combat.title':           'Combat',
   'combat.aamPrompt':       'Collision with {defender} — fire AAM?',
+  'combat.aamProactivePrompt':'Enemy {defender} appears within 4 cells ahead — fire AAM?',
   'combat.samPrompt':       'Enemy {attacker} entered your radar zone — fire SAM?',
   'combat.counterAamPrompt':'Counter AAM: facing {attacker} — choose your response.',
   'combat.aam.attackerRoll':'AAM duel — attacker {attacker}, please roll.',
@@ -451,6 +495,9 @@ const EN: Dict = {
   'combat.aam.counterDecision':'Defense succeeded ({attackerRoll} vs {defenderRoll}). Spend an AAM to counter {attacker}?',
   'combat.aam.counterDefenderRoll':'Counter — defender {defender}, please roll.',
   'combat.aam.counterAttackerRoll':'Counter — defender rolled {counterDefenderRoll}; attacker {attacker}, please roll.',
+  'combat.armRoll':         'ARM strike — {attacker} attacks {defender} radar; please roll (5/6 hits).',
+  'combat.cruiseRoll':      'Cruise vs landing strip — {attacker} attacks {defender}; please roll (4/5/6 hits).',
+  'combat.punishRetreatRoll':'Punishment: roll the dice and retreat that many steps.',
   'combat.opt.fire':        'Fire',
   'combat.opt.skip':        'Hold',
   'combat.opt.roll':        'Roll',
@@ -500,6 +547,41 @@ const EN: Dict = {
   'punishment.selfSkip':    'Skip a Round',
   'punishment.loseMissile': 'Lose Missile',
   'punishment.loseRadar':   'Lose Radar',
+
+  // Engine error codes (returned by err() / sendErr / S2C.Error).
+  'errcode.notYourRoll':            "It's not your roll",
+  'errcode.notYourTurn':            "It's not your turn",
+  'errcode.notYourDecision':        'This decision is not yours to make',
+  'errcode.notYourSam':             "That SAM is not yours",
+  'errcode.notYourQa':              'That question is not for you',
+  'errcode.cannotTakeoffNow':       'Cannot take off in the current phase',
+  'errcode.cannotTakeoffOnRoll':    'Cannot take off on this roll',
+  'errcode.notHangarPlane':         'That plane is not in the hangar',
+  'errcode.notInMovePhase':         'Not in the move phase',
+  'errcode.noSuchPlane':            'No such plane',
+  'errcode.planeNotMovable':        'That plane is not movable',
+  'errcode.noSuchCombat':           'No such combat',
+  'errcode.noSam':                  'No SAM available',
+  'errcode.noAam':                  'No AAM available',
+  'errcode.noQa':                   'No active Q&A',
+  'errcode.badChoice':              'Invalid choice',
+  'errcode.unhandledCombat':        'Unhandled combat kind',
+  'errcode.unhandledAamStep':       'Unhandled AAM step',
+  'errcode.cannotPlayReward':       'Cannot play this reward now',
+  'errcode.armNeedsTarget':         'ARM needs an enemy target',
+  'errcode.cruiseNeedsTarget':      'Cruise missile needs an enemy plane target',
+  'errcode.cannotPlayMissileDirect':'This missile cannot be played directly',
+  'errcode.cardNotFound':           'Card not found',
+  'errcode.targetNoRadars':         'Target has no radars',
+  'errcode.targetNotOnBoard':       'Target plane is not on the board',
+  'errcode.cruiseTargetInvalid':    'Cruise can only target takeoff or landing-strip planes',
+  // Network / room codes
+  'errcode.BAD_PAYLOAD':            'Invalid request payload',
+  'errcode.NO_SESSION':             'Session expired — please sign in again',
+  'errcode.NO_PLAYER':              'Player not found',
+  'errcode.NO_ROOM':                'Room not found',
+  'errcode.CANT_START':             'Cannot start the game right now',
+  'errcode.CANT_RESTART':           'Cannot restart the game right now',
 };
 
 const DICTS: Record<Locale, Dict> = { zh: ZH, en: EN };
@@ -553,6 +635,14 @@ export function renderLogLine(locale: Locale, line: string): string {
       const kindKey = `${kindNs}.${params.kind}`;
       const localized = DICTS[locale][kindKey] ?? DICTS.en[kindKey];
       if (localized) params.kind = localized;
+    }
+    // Engine error log line: server emits `{ msg: '<errcode>' }`. Map the
+    // code to a localized string so `引擎错误：现在不是你的回合` renders
+    // instead of the bare camelCase code.
+    if (obj.k === 'log.engineError' && typeof params.msg === 'string') {
+      const codeKey = `errcode.${params.msg}`;
+      const localized = DICTS[locale][codeKey] ?? DICTS.en[codeKey];
+      if (localized) params.msg = localized;
     }
     return translate(locale, obj.k, params);
   } catch {

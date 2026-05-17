@@ -173,7 +173,16 @@ export const useStore = create<Store>((set, get) => {
   sock.on(S2C.History, ({ log, chat }: { log: string[]; chat: ChatLine[] }) => {
     set({ log: log.slice(-200), chat: chat.slice(-200) });
   });
-  sock.on(S2C.Error, ({ code, message }) => set({ lastError: `${code}: ${message}` }));
+  sock.on(S2C.Error, ({ code, message }) => {
+    // Server emits a stable code (e.g. 'NO_ROOM', 'notYourTurn'). Prefer the
+    // localized errcode.<code> string so the user sees Chinese / English
+    // matching their selected locale instead of a bare English message.
+    const locale = get().locale;
+    const codeKey = `errcode.${code}`;
+    const localized = translate(locale, codeKey);
+    const text = localized === codeKey ? (message || code) : localized;
+    set({ lastError: text });
+  });
   sock.on(S2C.LobbyList, ({ rooms }) => set({ publicRooms: rooms }));
 
   return {

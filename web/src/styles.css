@@ -126,6 +126,20 @@ h1,h2,h3,h4{font-weight:700}
 .hud-stats .skip{color:#d32f2f}.hud-stats .shield{color:var(--green)}
 .hud-decks{margin-top:8px;font-size:11px;color:var(--muted)}
 
+/* ===== Room Info (collapsible side panel during a match) ===== */
+.room-info{background:var(--surface);border-radius:var(--radius);padding:8px 12px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.room-info > summary{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text);list-style:none;user-select:none}
+.room-info > summary::-webkit-details-marker{display:none}
+.room-info > summary::before{content:'▸';display:inline-block;font-size:10px;color:var(--muted);transition:transform .15s;margin-right:4px}
+.room-info[open] > summary::before{transform:rotate(90deg)}
+.room-info .ri-title{flex:1}
+.room-info .ri-code{font-family:monospace;font-size:12px;color:var(--muted);letter-spacing:.5px}
+.room-info .ri-row{display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px solid #f5f5f5}
+.room-info .ri-row:last-child{border-bottom:none}
+.room-info .ri-row:first-of-type{margin-top:6px;padding-top:6px;border-top:1px solid #eee}
+.room-info .ri-label{flex:0 0 110px;color:var(--muted);font-weight:600}
+.room-info .ri-value{flex:1;color:var(--text);text-align:right;word-break:break-all}
+
 /* ===== Log Panel ===== */
 .log-panel{background:var(--surface);border-radius:var(--radius);padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);display:flex;flex-direction:column;gap:6px;flex:1;min-height:0}
 .log-panel h3{font-size:14px}

@@ -10,6 +10,13 @@ const COLOR_SHORT_KEYS: Record<Color, string> = {
   red: 'color.short.red', yellow: 'color.short.yellow', blue: 'color.short.blue', green: 'color.short.green',
 };
 
+// Visual seat order in the 2x2 grid (filled row-by-row left→right, top→bottom)
+// must mirror the board's clockwise spatial layout:
+//   yellow(TL) — blue(TR)
+//      red(BL) — green(BR)
+// See server/src/game/board.ts (COLOR_ROT comment) for the canonical layout.
+const SEAT_DISPLAY_ORDER: Color[] = ['yellow', 'blue', 'red', 'green'];
+
 type Difficulty = 'easy' | 'medium' | 'hard';
 const DIFFICULTY_PRESETS: Record<Difficulty, number[]> = {
   easy: [2, 4, 6],
@@ -56,18 +63,10 @@ export default function Room() {
   const onCollisionAllEnemiesChange = (v: boolean) => {
     setOptions({ ...room.options, collisionAllEnemies: v });
   };
-  const onEnableAamDuelChange = (v: boolean) => {
-    setOptions({ ...room.options, enableAamDuel: v });
-  };
-  const onEnablePerchChange = (v: boolean) => {
-    setOptions({ ...room.options, enablePerch: v });
-  };
 
   // Backward-compat: rooms created before this option was added may have
-  // these fields undefined; treat undefined as the strict default.
-  const collisionAllEnemies = room.options.collisionAllEnemies ?? true;
-  const enableAamDuel = room.options.enableAamDuel ?? false;
-  const enablePerch = room.options.enablePerch ?? false;
+  // these fields undefined; treat undefined as the strict rulebook default.
+  const collisionAllEnemies = room.options.collisionAllEnemies ?? false;
 
   return (
     <div className="room">
@@ -77,18 +76,22 @@ export default function Room() {
       </header>
 
       <div className="seats">
-        {room.seats.map(s => (
-          <button
-            key={s.color}
-            className={`seat seat-${s.color} ${s.player ? 'taken' : ''} ${me?.color === s.color ? 'mine' : ''}`}
-            onClick={() => claimSeat(s.color)}
-          >
-            <div className="seat-color">{t(COLOR_SHORT_KEYS[s.color])} {t(COLOR_KEYS[s.color])}</div>
-            <div className="seat-player">
-              {s.player ? `${s.player.nickname}${s.ready ? ' ✓' : ''}${!s.player.connected ? ' ' + t('room.offline') : ''}` : t('common.empty')}
-            </div>
-          </button>
-        ))}
+        {SEAT_DISPLAY_ORDER.map(color => {
+          const s = room.seats.find(x => x.color === color);
+          if (!s) return null;
+          return (
+            <button
+              key={s.color}
+              className={`seat seat-${s.color} ${s.player ? 'taken' : ''} ${me?.color === s.color ? 'mine' : ''}`}
+              onClick={() => claimSeat(s.color)}
+            >
+              <div className="seat-color">{t(COLOR_SHORT_KEYS[s.color])} {t(COLOR_KEYS[s.color])}</div>
+              <div className="seat-player">
+                {s.player ? `${s.player.nickname}${s.ready ? ' ✓' : ''}${!s.player.connected ? ' ' + t('room.offline') : ''}` : t('common.empty')}
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       <div className="options">
@@ -136,32 +139,6 @@ export default function Room() {
             />
           ) : (
             <span className="option-value">{t(collisionAllEnemies ? 'common.on' : 'common.off')}</span>
-          )}
-        </div>
-        <div className="option-row">
-          <label className="option-label" title={t('room.enableAamDuelHint')}>{t('room.enableAamDuel')}</label>
-          {isHost ? (
-            <input
-              type="checkbox"
-              className="option-input"
-              checked={enableAamDuel}
-              onChange={e => onEnableAamDuelChange(e.target.checked)}
-            />
-          ) : (
-            <span className="option-value">{t(enableAamDuel ? 'common.on' : 'common.off')}</span>
-          )}
-        </div>
-        <div className="option-row">
-          <label className="option-label" title={t('room.enablePerchHint')}>{t('room.enablePerch')}</label>
-          {isHost ? (
-            <input
-              type="checkbox"
-              className="option-input"
-              checked={enablePerch}
-              onChange={e => onEnablePerchChange(e.target.checked)}
-            />
-          ) : (
-            <span className="option-value">{t(enablePerch ? 'common.on' : 'common.off')}</span>
           )}
         </div>
       </div>

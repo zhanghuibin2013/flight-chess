@@ -54,11 +54,9 @@ const DEFAULT_OPTIONS: GameOptions = {
   turnTimeoutMs: 60_000,
   victory: 'oneHome',
   fillBots: false,
-  // Strict collision is the default: every enemy on the cell returns to
-  // hangar, no AAM duel prompt, no perch on roll-6.
-  collisionAllEnemies: true,
-  enableAamDuel: false,
-  enablePerch: false,
+  // Defaults follow the printed rulebook (说明书):
+  //  - 撞机：仅撞迭机时只有一架对方机退回；普通撞机两机都退（false）
+  collisionAllEnemies: false,
 };
 
 export class RoomRegistry {
@@ -193,8 +191,6 @@ export class RoomRegistry {
       ...room.options,
       ...options,
       collisionAllEnemies: options.collisionAllEnemies ?? room.options.collisionAllEnemies ?? DEFAULT_OPTIONS.collisionAllEnemies,
-      enableAamDuel: options.enableAamDuel ?? room.options.enableAamDuel ?? DEFAULT_OPTIONS.enableAamDuel,
-      enablePerch: options.enablePerch ?? room.options.enablePerch ?? DEFAULT_OPTIONS.enablePerch,
     };
     return true;
   }

@@ -126,18 +126,11 @@ export interface GameOptions {
   fillBots: boolean;
   /** Collision rules — when planes from different players land on the same cell.
    *  Defaults reflect the simple "directly retreat to hangar" behavior. */
-  /** When true, all enemy planes on the collision cell return to hangar
-   *  (alongside the attacker). When false (legacy), only one enemy from a
-   *  stack returns. Default: true. */
+  /** When true (legacy), all enemy planes on the collision cell return to
+   *  hangar alongside the attacker. When false (spec), only one enemy from a
+   *  stack returns; single enemies still both retreat with the attacker.
+   *  Default: false (matches the printed rulebook). */
   collisionAllEnemies: boolean;
-  /** When true, attackers holding an AAM card are prompted for a duel before
-   *  collision is resolved. When false, collision is always immediate.
-   *  Default: false. */
-  enableAamDuel: boolean;
-  /** When true, a roll of 6 that lands on an enemy stack causes the moving
-   *  plane to perch on top instead of colliding. When false, every direct
-   *  landing on an enemy cell is a collision. Default: false. */
-  enablePerch: boolean;
 }
 
 export interface DiceRoll { value: number; chain: number; /** 1st, 2nd, 3rd consecutive 6 */ }

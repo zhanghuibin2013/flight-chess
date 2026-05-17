@@ -28,7 +28,11 @@ export default function CombatModal({ prompt }: Props) {
         params[f] = t(COLOR_KEYS[v as Color]);
       }
     }
-    body = translate(locale, prompt.descriptionKey, params);
+    const translated = translate(locale, prompt.descriptionKey, params);
+    // Stale-dict guard: if the active bundle predates this key, translate()
+    // returns the key itself. Prefer the server-provided English fallback
+    // over leaking a raw i18n identifier into the UI.
+    body = translated === prompt.descriptionKey ? prompt.description : translated;
   }
 
   return (

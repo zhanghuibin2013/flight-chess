@@ -21,6 +21,16 @@ const MARGIN = 90;
 // to the bottom-left for that player.
 const VIEW_ROT: Record<Color, number> = { red: 0, yellow: 1, blue: 2, green: 3 };
 
+// Canonical board-corner per color (in normalized 0..1 board coords).
+// Each color's quadrant occupies one corner of the play frame; the corner
+// is the most extreme point of that quadrant on the board.
+const CORNER_POS: Record<Color, { x: number; y: number }> = {
+  red:    { x: 0, y: 1 },
+  yellow: { x: 0, y: 0 },
+  blue:   { x: 1, y: 0 },
+  green:  { x: 1, y: 1 },
+};
+
 function rotateView(p: { x: number; y: number }, k: number): { x: number; y: number } {
   let { x, y } = p;
   for (let i = 0; i < k; i++) {
@@ -54,7 +64,9 @@ export default function Board() {
       {/* Frame */}
       <rect x="0" y="0" width={SIZE} height={SIZE} fill="#fafafa" rx="8" />
 
-      {/* Defs: per-color arrowhead marker for shortcut flow direction. */}
+      {/* Defs: per-color arrowhead marker for shortcut flow direction, plus a
+          clip path that constrains corner-anchored ADIZ circles to the play
+          frame. */}
       <defs>
         {(['red','yellow','blue','green'] as Color[]).map(c => (
           <marker
@@ -70,7 +82,45 @@ export default function Board() {
             <path d="M0 0 L10 5 L0 10 Z" fill={COLOR_STROKE[c]} />
           </marker>
         ))}
+        <clipPath id="board-frame-clip">
+          <rect x="0" y="0" width={SIZE} height={SIZE} rx="8" />
+        </clipPath>
       </defs>
+
+      {/* Per-color ADIZ corner marker: two concentric circles centered at
+          the very corner of the board (the corner of that color's quadrant).
+          Drawn whenever that color owns at least one radar. The circles are
+          clipped to the play frame so only the in-board quarter shows. */}
+      {(['red','yellow','blue','green'] as Color[]).map(c => {
+        if (state.hands[c].radars <= 0) return null;
+        const corner = CORNER_POS[c];
+        const r = rotateView(corner, k);
+        const cx = r.x * SIZE;
+        const cy = r.y * SIZE;
+        const isMine = c === mySeat;
+        const r1 = 95;
+        const r2 = 165;
+        return (
+          <g key={`adiz-${c}`} pointerEvents="none" clipPath="url(#board-frame-clip)">
+            <circle
+              cx={cx} cy={cy} r={r1}
+              fill="none"
+              stroke={COLOR_STROKE[c]}
+              strokeWidth={isMine ? 2.5 : 2}
+              strokeOpacity={isMine ? 0.65 : 0.45}
+              strokeDasharray="6 5"
+            />
+            <circle
+              cx={cx} cy={cy} r={r2}
+              fill="none"
+              stroke={COLOR_STROKE[c]}
+              strokeWidth={isMine ? 2.5 : 2}
+              strokeOpacity={isMine ? 0.55 : 0.35}
+              strokeDasharray="6 5"
+            />
+          </g>
+        );
+      })}
 
       {/* Cells */}
       {board.cells.map(c => <CellNode key={c.id} cell={c} k={k} />)}

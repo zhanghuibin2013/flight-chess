@@ -216,9 +216,23 @@ export interface PublicRoomSummary {
 
 // ----- Q&A schema -----
 
+/** Question kind. Defaults to 'single' for legacy rows lacking the field. */
+export type QuestionKind = 'single' | 'multi' | 'judge';
+
 export interface QuestionRow {
   id: string;
   prompt: string;
   options: string[];
+  /**
+   * Index of the correct option.
+   *  - 'single': the single correct option's index.
+   *  - 'judge':  0 = first option (e.g. true/对), 1 = second option (e.g. false/错).
+   *  - 'multi':  set to the smallest index of the correct set (kept for backward
+   *              compatibility with consumers that only read answerIndex).
+   */
   answerIndex: number;
+  /** Optional kind tag. Absent rows are treated as 'single'. */
+  kind?: QuestionKind;
+  /** For 'multi' kind: sorted indexes of all correct options. */
+  answerIndexes?: number[];
 }

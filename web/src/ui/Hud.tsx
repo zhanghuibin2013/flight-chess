@@ -14,8 +14,8 @@ export default function Hud() {
   const t = useT();
 
   return (
-    <div className="hud">
-      <h3>{t('hud.players')}</h3>
+    <details className="hud" open>
+      <summary>{t('hud.players')}</summary>
       {(['red','yellow','blue','green'] as Color[]).map(c => {
         const seat = room?.seats.find(s => s.color === c);
         if (!seat?.player) return null;
@@ -50,6 +50,6 @@ export default function Hud() {
           qa: state.deckCounts.questions,
         })}</small>
       </div>
-    </div>
+    </details>
   );
 }

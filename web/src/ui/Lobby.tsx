@@ -164,6 +164,17 @@ export default function Lobby() {
           </ul>
         )}
       </div>
+
+      {/* Footer: admin (question-bank) entry. */}
+      <div className="lobby-footer">
+        <a
+          className="lobby-admin-link"
+          href="#admin"
+          onClick={() => { /* hashchange triggers App route switch */ }}
+        >
+          📝 {t('lobby.adminLink')}
+        </a>
+      </div>
     </div>
   );
 }

@@ -11,6 +11,10 @@ export default defineConfig({
         ws: true,
         changeOrigin: true,
       },
+      '/admin': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   },
 });

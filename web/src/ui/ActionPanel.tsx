@@ -347,8 +347,8 @@ export default function ActionPanel() {
 
     </div>
     <div className="action-panel">
-      <div className="hand">
-        <h4>{t('game.arsenal')}</h4>
+      <details className="hand arsenal-section" open>
+        <summary>{t('game.arsenal')}</summary>
         <div className="arsenal-summary">
           <span className="arsenal-row">{t('game.radars')} <strong>{myRadars}</strong></span>
           {MISSILE_KINDS.map(k => (
@@ -380,7 +380,7 @@ export default function ActionPanel() {
             ))}
           </div>
         )}
-      </div>
+      </details>
 
       <div className="hand">
         <h4>{t('game.rewardCards')}</h4>

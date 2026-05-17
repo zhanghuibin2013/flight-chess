@@ -173,6 +173,17 @@ export interface RoomPublic {
   seats: { color: Color; player?: PlayerPublic; ready: boolean }[];
   options: GameOptions;
   inGame: boolean;
+  /** Private rooms are joinable only via direct room code, never via lobby browse. */
+  private: boolean;
+}
+
+/** Compact summary used by the lobby browser. */
+export interface PublicRoomSummary {
+  id: string;
+  hostNickname: string;
+  seated: number;
+  capacity: number;
+  inGame: boolean;
 }
 
 // ----- Q&A schema -----

@@ -54,10 +54,29 @@ export default function Board() {
       {/* Frame */}
       <rect x="0" y="0" width={SIZE} height={SIZE} fill="#fafafa" rx="8" />
 
+      {/* Defs: per-color arrowhead marker for shortcut flow direction. */}
+      <defs>
+        {(['red','yellow','blue','green'] as Color[]).map(c => (
+          <marker
+            key={`m-${c}`}
+            id={`shortcut-arrow-${c}`}
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="7"
+            markerHeight="7"
+            orient="auto-start-reverse"
+          >
+            <path d="M0 0 L10 5 L0 10 Z" fill={COLOR_STROKE[c]} />
+          </marker>
+        ))}
+      </defs>
+
       {/* Cells */}
       {board.cells.map(c => <CellNode key={c.id} cell={c} k={k} />)}
 
-      {/* Shortcut connectors: dashed line from each shortcut entry to its paired exit */}
+      {/* Shortcut connectors: animated dashed line with arrow indicating
+          travel direction (entry → exit). */}
       {board.cells
         .filter(c => c.kind === 'shortcutEntry' && c.shortcutPair !== undefined && c.color)
         .map(entry => {
@@ -68,15 +87,17 @@ export default function Board() {
           return (
             <line
               key={`shortcut-${entry.id}`}
+              className="shortcut-flow"
               x1={r1.x * SIZE}
               y1={r1.y * SIZE}
               x2={r2.x * SIZE}
               y2={r2.y * SIZE}
               stroke={COLOR_STROKE[entry.color!]}
-              strokeWidth={2}
-              strokeDasharray="6 4"
-              opacity={0.65}
+              strokeWidth={2.5}
+              strokeDasharray="8 5"
+              opacity={0.85}
               pointerEvents="none"
+              markerEnd={`url(#shortcut-arrow-${entry.color})`}
             />
           );
         })}
@@ -148,29 +169,54 @@ function CellNode({ cell, k }: { cell: Cell; k: number }) {
   const fill = cell.color ? COLOR_FILL[cell.color] : '#ffffff';
   const stroke = cell.color ? COLOR_STROKE[cell.color] : '#9e9e9e';
 
+  // Highway entry/exit get larger, more iconic glyphs that read clearly
+  // alongside the animated dashed connector.
   let icon: string | null = null;
+  let iconSize = 14;
+  let iconDy = 5;
   if (cell.kind === 'missileFactory') icon = '✈';
   else if (cell.kind === 'radarFactory') icon = '📡';
   else if (cell.kind === 'library') icon = '?';
-  else if (cell.kind === 'shortcutEntry') icon = '→';
-  else if (cell.kind === 'shortcutExit') icon = '↘';
+  else if (cell.kind === 'shortcutEntry') { icon = '🚀'; iconSize = 18; iconDy = 6; }
+  else if (cell.kind === 'shortcutExit')  { icon = '🏁'; iconSize = 18; iconDy = 6; }
   else if (cell.kind === 'home') icon = '★';
   else if (cell.kind === 'takeoff') icon = '▲';
+
+  // Highlight the highway endpoints with a thicker, slightly larger frame
+  // so they pop visually as "special infrastructure" cells.
+  const isHighway = cell.kind === 'shortcutEntry' || cell.kind === 'shortcutExit';
+  const cellSide = isHighway ? side + 4 : side;
+  const cellStrokeW = isHighway ? 3 : 2;
 
   return (
     <g>
       <rect
-        x={x - side / 2}
-        y={y - side / 2}
-        width={side}
-        height={side}
-        rx={4}
+        x={x - cellSide / 2}
+        y={y - cellSide / 2}
+        width={cellSide}
+        height={cellSide}
+        rx={isHighway ? 8 : 4}
         fill={fill}
         stroke={stroke}
-        strokeWidth={2}
+        strokeWidth={cellStrokeW}
       />
+      {isHighway && (
+        // Inner glow ring to make highway endpoints stand out.
+        <rect
+          x={x - cellSide / 2 + 3}
+          y={y - cellSide / 2 + 3}
+          width={cellSide - 6}
+          height={cellSide - 6}
+          rx={5}
+          fill="none"
+          stroke="#fff"
+          strokeWidth={1.5}
+          opacity={0.8}
+          pointerEvents="none"
+        />
+      )}
       {icon && (
-        <text x={x} y={y + 5} textAnchor="middle" fontSize="14" fill="#212121">{icon}</text>
+        <text x={x} y={y + iconDy} textAnchor="middle" fontSize={iconSize} fill="#212121">{icon}</text>
       )}
     </g>
   );

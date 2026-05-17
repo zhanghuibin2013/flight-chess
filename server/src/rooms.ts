@@ -2,7 +2,7 @@
 
 import { nanoid } from 'nanoid';
 import type {
-  Color, GameOptions, PlayerPublic, RoomPublic, QuestionRow,
+  Color, GameOptions, PlayerPublic, RoomPublic, QuestionRow, PublicRoomSummary,
 } from '@fkzz/shared';
 import { COLORS } from '@fkzz/shared';
 import { GameEngine, EngineCallbacks } from './game/engine.js';
@@ -27,6 +27,8 @@ export interface Room {
   seats: Seat[];               // length 4, fixed colors
   options: GameOptions;
   engine?: GameEngine;
+  /** Private rooms are joinable only by direct room-code entry; never browsed. */
+  isPrivate: boolean;
 }
 
 const DEFAULT_OPTIONS: GameOptions = {
@@ -97,13 +99,14 @@ export class RoomRegistry {
     return rid ? this.rooms.get(rid) : undefined;
   }
 
-  createRoom(hostPlayerId: string): Room {
+  createRoom(hostPlayerId: string, isPrivate = false): Room {
     const id = this.generateRoomId();
     const room: Room = {
       id,
       hostId: hostPlayerId,
       seats: COLORS.map(c => ({ color: c, ready: false })),
       options: { ...DEFAULT_OPTIONS },
+      isPrivate,
     };
     this.rooms.set(id, room);
     return room;
@@ -225,10 +228,34 @@ export class RoomRegistry {
       })),
       options: room.options,
       inGame: !!room.engine,
+      private: room.isPrivate,
     };
   }
   private publicPlayer(p: Player): PlayerPublic {
     return { id: p.id, nickname: p.nickname, color: 'red' /*overwritten by seat*/, connected: p.connected, isBot: p.isBot };
+  }
+
+  /** Compact list of NON-private rooms for the lobby browser. Excludes rooms
+   *  that have already started (so spectators don't accidentally walk into a
+   *  game in progress) and rooms whose seats are entirely empty. */
+  listPublicRooms(): PublicRoomSummary[] {
+    const out: PublicRoomSummary[] = [];
+    for (const room of this.rooms.values()) {
+      if (room.isPrivate) continue;
+      if (room.engine) continue; // already in-game
+      const seated = room.seats.filter(s => s.player).length;
+      if (seated === 0) continue;
+      const host = this.players.get(room.hostId);
+      out.push({
+        id: room.id,
+        hostNickname: host?.nickname ?? '???',
+        seated,
+        capacity: room.seats.length,
+        inGame: false,
+      });
+    }
+    // Newest first by id sort isn't reliable; just keep insertion order.
+    return out;
   }
 
   /** Returns all socket ids for players in this room (so we can broadcast). */

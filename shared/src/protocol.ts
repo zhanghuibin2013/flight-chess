@@ -1,11 +1,13 @@
 import { z } from 'zod';
-import type { GameState, RoomPublic, BoardSnapshot, Color } from './types.js';
+import type { GameState, RoomPublic, BoardSnapshot, Color, PublicRoomSummary } from './types.js';
 
 // ====== Client → Server ======
 
 export const C2S = {
-  LobbyCreate:   'lobby:create',
-  LobbyJoin:     'lobby:join',
+  LobbyCreate:    'lobby:create',
+  LobbyJoin:      'lobby:join',
+  LobbySubscribe: 'lobby:subscribe',
+  LobbyUnsubscribe:'lobby:unsubscribe',
   RoomLeave:     'room:leave',
   RoomSetOpts:   'room:setOptions',
   RoomReady:     'room:ready',
@@ -27,6 +29,8 @@ export type C2SEvent = typeof C2S[keyof typeof C2S];
 // Payload schemas
 export const LobbyCreateZ = z.object({
   nickname: z.string().min(1).max(16),
+  /** When true, the room won't appear in the public lobby list. Default false. */
+  isPrivate: z.boolean().optional(),
 });
 export const LobbyJoinZ = z.object({
   roomId: z.string().min(4).max(8),
@@ -83,6 +87,7 @@ export const S2C = {
   EventLog:   'event:log',
   Chat:       'chat',
   Error:      'error',
+  LobbyList:  'lobby:list',
 } as const;
 
 export type S2CEvent = typeof S2C[keyof typeof S2C];
@@ -100,3 +105,4 @@ export interface CardDrawnPayload {
 export interface LogPayload       { line: string; }
 export interface ChatPayload      { from: string; nickname: string; message: string; ts: number; }
 export interface ErrorPayload     { code: string; message: string; }
+export interface LobbyListPayload { rooms: PublicRoomSummary[]; }

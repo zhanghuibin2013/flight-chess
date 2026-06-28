@@ -169,6 +169,8 @@ export default function QuestionBankAdmin() {
       answerIndexes: q.answerIndexes.slice(),
     }));
     setRows(prev => [...drafts, ...prev]);
+    // Hint user that they still need to click 保存 to persist.
+    setMessage({ type: 'ok', text: t('admin.ir.addedNeedSave', { n: drafts.length }) });
   };
 
   const updateRow = (idx: number, patch: Partial<DraftRow>) => {

@@ -1,7 +1,7 @@
 // Image-recognition panel for quick question-bank entry.
-// Admin uploads a question image → server calls a multimodal AI → parsed
-// questions are shown for review → admin clicks "Add to Bank" to inject them
-// into the existing question list.
+// Supports parallel processing: admin can upload multiple images, each
+// recognised independently. While one image is being processed, the admin
+// can already upload / shoot the next one.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { QuestionKind } from '@fkzz/shared';
@@ -25,20 +25,51 @@ export interface RecognizedQuestion {
   answerIndexes: number[];
 }
 
+type ItemStatus = 'pending' | 'recognizing' | 'done' | 'error';
+
+interface QueueItem {
+  uid: string;
+  dataUrl: string;
+  base64: string;
+  mime: string;
+  name: string;
+  status: ItemStatus;
+  questions: RecognizedQuestion[];
+  error: string | null;
+}
+
 interface Props {
   onAdd: (questions: RecognizedQuestion[]) => void;
 }
 
 // ---- Helpers ----
 
-function genId(): string {
+let uidCounter = 0;
+function uid(): string {
+  return `ir-${Date.now().toString(36)}-${++uidCounter}`;
+}
+
+function qId(): string {
   return `q-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
 const PROVIDER_DEFAULTS: Record<string, { baseUrl: string; model: string }> = {
-  openai:    { baseUrl: 'https://api.openai.com/v1',     model: 'gpt-4o' },
-  anthropic: { baseUrl: 'https://api.anthropic.com',     model: 'claude-sonnet-4-20250514' },
+  openai:    { baseUrl: 'https://api.openai.com/v1',  model: 'gpt-4o' },
+  anthropic: { baseUrl: 'https://api.anthropic.com',  model: 'claude-sonnet-4-20250514' },
 };
+
+function mapServerQuestions(raw: any[]): RecognizedQuestion[] {
+  return raw.map((q, i) => ({
+    id: q.id || qId(),
+    prompt: q.prompt ?? '',
+    options: Array.isArray(q.options) ? q.options : [],
+    answerIndex: q.answerIndex ?? 0,
+    kind: (q.kind === 'multi' || q.kind === 'judge' || q.kind === 'single') ? q.kind : 'single',
+    answerIndexes: Array.isArray(q.answerIndexes)
+      ? q.answerIndexes
+      : (q.kind === 'multi' ? [q.answerIndex ?? 0] : []),
+  }));
+}
 
 // ---- Component ----
 
@@ -46,23 +77,20 @@ export default function ImageRecognitionPanel({ onAdd }: Props) {
   const t = useT();
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Queue
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+
   // AI config
   const [config, setConfig] = useState<AIConfig>({
     provider: 'openai', baseUrl: '', apiKey: '', model: '',
   });
-  const [configDraft, setConfigDraft] = useState<AIConfig>(config);
+  const [configDraft, setConfigDraft] = useState<AIConfig>({ ...config });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const [configLoaded, setConfigLoaded] = useState(false);
 
-  // Image & recognition
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
-  const [base64, setBase64] = useState<string | null>(null);
-  const [mime, setMime] = useState('');
-  const [recognizing, setRecognizing] = useState(false);
-  const [results, setResults] = useState<RecognizedQuestion[] | null>(null);
-  const [panelMsg, setPanelMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const [dragOver, setDragOver] = useState(false);
+  // Global message
+  const [globalMsg, setGlobalMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // Load AI config on mount
   useEffect(() => {
@@ -74,8 +102,7 @@ export default function ImageRecognitionPanel({ onAdd }: Props) {
         const cfg = (await res.json()) as AIConfig;
         if (!cancelled) {
           setConfig(cfg);
-          setConfigDraft({ ...cfg, apiKey: '' }); // Don't pre-fill masked key
-          setConfigLoaded(true);
+          setConfigDraft({ ...cfg, apiKey: '' });
         }
       } catch { /* ignore */ }
     })();
@@ -84,148 +111,193 @@ export default function ImageRecognitionPanel({ onAdd }: Props) {
 
   // ---- File handling ----
 
-  const handleFile = useCallback((file: File) => {
-    if (!file.type.startsWith('image/')) return;
-    if (file.size > 8 * 1024 * 1024) {
-      setPanelMsg({ type: 'err', text: 'Image too large (max 8MB)' });
-      return;
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const arr = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (arr.length === 0) return;
+    // Pre-allocate slots so async FileReader onload callbacks can write
+    // into the correct position regardless of completion order.
+    const slots: (QueueItem | null)[] = arr.map(() => null);
+    let validCount = 0;
+    let loaded = 0;
+    let tooLarge = false;
+
+    arr.forEach((file, idx) => {
+      if (file.size > 8 * 1024 * 1024) { tooLarge = true; return; }
+      validCount++;
+      const reader = new FileReader();
+      const itemUid = uid();
+      reader.onload = () => {
+        const url = reader.result as string;
+        const commaIdx = url.indexOf(',');
+        slots[idx] = {
+          uid: itemUid,
+          dataUrl: url,
+          base64: url.slice(commaIdx + 1),
+          mime: file.type,
+          name: file.name,
+          status: 'pending',
+          questions: [],
+          error: null,
+        };
+        loaded++;
+        if (loaded === validCount) {
+          const newItems = slots.filter((s): s is QueueItem => s !== null);
+          setQueue(prev => [...prev, ...newItems]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    if (tooLarge) {
+      setGlobalMsg({ type: 'err', text: '部分图片超过 8MB 限制，已跳过' });
     }
-    setResults(null);
-    setPanelMsg(null);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = reader.result as string;
-      setDataUrl(url);
-      // Extract base64 part (after the comma) and the mime type
-      const commaIdx = url.indexOf(',');
-      setBase64(url.slice(commaIdx + 1));
-      setMime(file.type);
-    };
-    reader.readAsDataURL(file);
+    // Reset file input
+    if (fileRef.current) fileRef.current.value = '';
   }, []);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
-    // Reset so the same file can be re-selected
-    if (fileRef.current) fileRef.current.value = '';
+    if (e.target.files) addFiles(e.target.files);
   };
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) handleFile(file);
+    if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
   };
 
-  const clearImage = () => {
-    setDataUrl(null);
-    setBase64(null);
-    setMime('');
-    setResults(null);
-    setPanelMsg(null);
+  // ---- Per-item actions ----
+
+  const removeItem = (itemUid: string) => {
+    setQueue(prev => prev.filter(it => it.uid !== itemUid));
   };
 
-  // ---- Recognition ----
+  const updateQuestion = (itemUid: string, qIdx: number, patch: Partial<RecognizedQuestion>) => {
+    setQueue(prev => prev.map(it => {
+      if (it.uid !== itemUid) return it;
+      const questions = it.questions.map((q, i) => i === qIdx ? { ...q, ...patch } : q);
+      return { ...it, questions };
+    }));
+  };
 
-  const recognize = async () => {
-    if (!base64 || !mime) {
-      setPanelMsg({ type: 'err', text: t('admin.ir.err.noImage') });
-      return;
-    }
-    setRecognizing(true);
-    setPanelMsg(null);
-    setResults(null);
+  const updateOption = (itemUid: string, qIdx: number, optIdx: number, value: string) => {
+    setQueue(prev => prev.map(it => {
+      if (it.uid !== itemUid) return it;
+      const questions = it.questions.map((q, qi) => {
+        if (qi !== qIdx) return q;
+        return { ...q, options: q.options.map((o, j) => j === optIdx ? value : o) };
+      });
+      return { ...it, questions };
+    }));
+  };
+
+  const toggleAnswer = (itemUid: string, qIdx: number, optIdx: number) => {
+    setQueue(prev => prev.map(it => {
+      if (it.uid !== itemUid) return it;
+      const questions = it.questions.map((q, qi) => {
+        if (qi !== qIdx) return q;
+        if (q.kind === 'multi') {
+          const has = q.answerIndexes.includes(optIdx);
+          const next = has
+            ? q.answerIndexes.filter(x => x !== optIdx)
+            : [...q.answerIndexes, optIdx].sort((a, b) => a - b);
+          return { ...q, answerIndexes: next, answerIndex: next[0] ?? 0 };
+        }
+        return { ...q, answerIndex: optIdx };
+      });
+      return { ...it, questions };
+    }));
+  };
+
+  const removeQuestion = (itemUid: string, qIdx: number) => {
+    setQueue(prev => prev.map(it => {
+      if (it.uid !== itemUid) return it;
+      return { ...it, questions: it.questions.filter((_, i) => i !== qIdx) };
+    }));
+  };
+
+  const addManualQuestion = (itemUid: string) => {
+    const newQ: RecognizedQuestion = {
+      id: qId(), prompt: '', options: ['', '', '', ''],
+      answerIndex: 0, kind: 'single', answerIndexes: [],
+    };
+    setQueue(prev => prev.map(it =>
+      it.uid !== itemUid ? it : { ...it, questions: [newQ, ...it.questions] }
+    ));
+  };
+
+  const changeQuestionKind = (itemUid: string, qIdx: number, kind: QuestionKind) => {
+    setQueue(prev => prev.map(it => {
+      if (it.uid !== itemUid) return it;
+      const questions = it.questions.map((q, qi) => {
+        if (qi !== qIdx) return q;
+        if (kind === 'judge') return { ...q, kind, options: ['正确', '错误'], answerIndex: 0, answerIndexes: [] } as RecognizedQuestion;
+        if (kind === 'multi') return { ...q, kind, answerIndexes: [q.answerIndex] } as RecognizedQuestion;
+        return { ...q, kind: 'single' as const, answerIndexes: [] };
+      });
+      return { ...it, questions };
+    }));
+  };
+
+  // ---- Recognition (per item) ----
+
+  const recognizeItem = async (itemUid: string) => {
+    let item: QueueItem | undefined;
+    setQueue(prev => {
+      item = prev.find(it => it.uid === itemUid);
+      if (!item) return prev;
+      return prev.map(it => it.uid === itemUid ? { ...it, status: 'recognizing' as ItemStatus, error: null } : it);
+    });
+    if (!item) return;
+
     try {
       const res = await fetch('/admin/ai/recognize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64, mimeType: mime }),
+        body: JSON.stringify({ image: item.base64, mimeType: item.mime }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      const questions = (body.questions ?? []) as any[];
-      const mapped: RecognizedQuestion[] = questions.map((q, i) => ({
-        id: q.id || genId(),
-        prompt: q.prompt ?? '',
-        options: q.options ?? [],
-        answerIndex: q.answerIndex ?? 0,
-        kind: (q.kind === 'multi' || q.kind === 'judge' || q.kind === 'single') ? q.kind : 'single',
-        answerIndexes: q.answerIndexes ?? (q.kind === 'multi' ? [q.answerIndex ?? 0] : []),
-      }));
-      setResults(mapped);
-      if (mapped.length === 0) {
-        setPanelMsg({ type: 'err', text: t('admin.ir.noResult') });
-      } else {
-        setPanelMsg({ type: 'ok', text: t('admin.ir.recognizedCount', { n: mapped.length }) });
-      }
+      const mapped = mapServerQuestions(body.questions ?? []);
+      setQueue(prev => prev.map(it =>
+        it.uid === itemUid
+          ? { ...it, status: 'done' as ItemStatus, questions: mapped, error: null }
+          : it
+      ));
     } catch (e) {
-      setPanelMsg({ type: 'err', text: t('admin.ir.err.recognizeFailed', { msg: (e as Error).message }) });
-    } finally {
-      setRecognizing(false);
+      setQueue(prev => prev.map(it =>
+        it.uid === itemUid
+          ? { ...it, status: 'error' as ItemStatus, error: (e as Error).message }
+          : it
+      ));
     }
   };
 
-  // ---- Results editing ----
+  // ---- Bulk actions ----
 
-  const updateResult = (idx: number, patch: Partial<RecognizedQuestion>) => {
-    setResults(prev => prev ? prev.map((r, i) => i === idx ? { ...r, ...patch } : r) : prev);
+  const pendingItems = queue.filter(it => it.status === 'pending');
+  const doneItems = queue.filter(it => it.status === 'done');
+  const totalQuestions = queue.reduce((sum, it) => sum + it.questions.length, 0);
+
+  const recognizeAll = () => {
+    pendingItems.forEach(it => recognizeItem(it.uid));
   };
 
-  const updateOption = (qIdx: number, optIdx: number, value: string) => {
-    setResults(prev => prev ? prev.map((r, qi) => {
-      if (qi !== qIdx) return r;
-      const options = r.options.slice();
-      options[optIdx] = value;
-      return { ...r, options };
-    }) : prev);
+  const clearDone = () => {
+    setQueue(prev => prev.filter(it => it.status !== 'done'));
   };
 
-  const toggleAnswer = (qIdx: number, optIdx: number) => {
-    setResults(prev => prev ? prev.map((r, qi) => {
-      if (qi !== qIdx) return r;
-      if (r.kind === 'multi') {
-        const has = r.answerIndexes.includes(optIdx);
-        const next = has
-          ? r.answerIndexes.filter(x => x !== optIdx)
-          : [...r.answerIndexes, optIdx].sort((a, b) => a - b);
-        return { ...r, answerIndexes: next, answerIndex: next[0] ?? 0 };
-      }
-      return { ...r, answerIndex: optIdx };
-    }) : prev);
+  const clearAll = () => {
+    setQueue([]);
+    setGlobalMsg(null);
   };
 
-  const removeResult = (idx: number) => {
-    setResults(prev => prev ? prev.filter((_, i) => i !== idx) : prev);
-  };
-
-  const addResult = () => {
-    const newQ: RecognizedQuestion = {
-      id: genId(),
-      prompt: '',
-      options: ['', '', '', ''],
-      answerIndex: 0,
-      kind: 'single',
-      answerIndexes: [],
-    };
-    setResults(prev => prev ? [newQ, ...prev] : [newQ]);
-  };
-
-  // ---- Actions ----
-
-  const handleAddToBank = () => {
-    if (!results || results.length === 0) return;
-    onAdd(results);
-    setPanelMsg({ type: 'ok', text: t('admin.ir.addedCount', { n: results.length }) });
-    setResults(null);
-    setDataUrl(null);
-    setBase64(null);
-    setMime('');
-  };
-
-  const handleDiscard = () => {
-    setResults(null);
-    setPanelMsg(null);
+  const addToBank = () => {
+    const all = queue.flatMap(it => it.questions);
+    if (all.length === 0) return;
+    onAdd(all);
+    setGlobalMsg({ type: 'ok', text: t('admin.ir.addedCount', { n: all.length }) });
+    // Clear done items but keep pending / error items
+    setQueue(prev => prev.filter(it => it.status !== 'done'));
   };
 
   // ---- AI Settings ----
@@ -233,8 +305,7 @@ export default function ImageRecognitionPanel({ onAdd }: Props) {
   const changeProvider = (provider: 'openai' | 'anthropic') => {
     const defaults = PROVIDER_DEFAULTS[provider];
     setConfigDraft(prev => ({
-      ...prev,
-      provider,
+      ...prev, provider,
       baseUrl: prev.baseUrl || defaults.baseUrl,
       model: prev.model || defaults.model,
     }));
@@ -257,212 +328,169 @@ export default function ImageRecognitionPanel({ onAdd }: Props) {
     }
   };
 
-  // ---- Render ----
+  // ---- Render helpers ----
+
+  const renderItem = (item: QueueItem) => {
+    const isRecognizing = item.status === 'recognizing';
+    const isDone = item.status === 'done';
+    const isError = item.status === 'error';
+
+    return (
+      <div key={item.uid} className={'ir-item ir-item-' + item.status}>
+        <div className="ir-item-left">
+          <img className="ir-item-thumb" src={item.dataUrl} alt={item.name} />
+        </div>
+        <div className="ir-item-right">
+          <div className="ir-item-head">
+            <span className="ir-item-name" title={item.name}>{item.name}</span>
+            {item.status === 'pending' && <span className="ir-status ir-status-pending">待识别</span>}
+            {isRecognizing && <span className="ir-status ir-status-loading">识别中…</span>}
+            {isDone && <span className="ir-status ir-status-done">
+              {t('admin.ir.recognizedCount', { n: item.questions.length })}
+            </span>}
+            {isError && <span className="ir-status ir-status-err">失败</span>}
+          </div>
+
+          {/* Pending: show recognize + remove buttons */}
+          {item.status === 'pending' && (
+            <div className="ir-item-actions">
+              <button className="ir-btn-primary ir-btn-sm" onClick={() => recognizeItem(item.uid)}>
+                {t('admin.ir.recognize')}
+              </button>
+              <button className="ir-btn-secondary ir-btn-sm" onClick={() => removeItem(item.uid)}>
+                {t('admin.delete')}
+              </button>
+            </div>
+          )}
+
+          {/* Recognizing: spinner */}
+          {isRecognizing && (
+            <div className="ir-item-actions">
+              <span className="ir-spinner" />
+              <span className="ir-item-hint">{t('admin.ir.recognizing')}</span>
+            </div>
+          )}
+
+          {/* Error: show message + retry */}
+          {isError && (
+            <div className="ir-item-actions">
+              <span className="ir-item-err-msg">{item.error}</span>
+              <button className="ir-btn-secondary ir-btn-sm" onClick={() => recognizeItem(item.uid)}>
+                重试
+              </button>
+              <button className="ir-btn-secondary ir-btn-sm" onClick={() => removeItem(item.uid)}>
+                {t('admin.delete')}
+              </button>
+            </div>
+          )}
+
+          {/* Done: editable question list */}
+          {isDone && (
+            <div className="ir-item-questions">
+              {item.questions.length === 0 && (
+                <p className="ir-item-empty">{t('admin.ir.noResult')}</p>
+              )}
+              {item.questions.map((q, qi) => (
+                <div key={q.id} className="ir-q-card">
+                  <div className="ir-q-head">
+                    <span className="ir-q-no">#{qi + 1}</span>
+                    <select
+                      value={q.kind}
+                      onChange={e => changeQuestionKind(item.uid, qi, e.target.value as QuestionKind)}
+                    >
+                      <option value="single">{t('admin.kind.single')}</option>
+                      <option value="multi">{t('admin.kind.multi')}</option>
+                      <option value="judge">{t('admin.kind.judge')}</option>
+                    </select>
+                    <button className="ir-btn-del" onClick={() => removeQuestion(item.uid, qi)}>
+                      {t('admin.delete')}
+                    </button>
+                  </div>
+                  <textarea
+                    className="ir-prompt-input"
+                    value={q.prompt}
+                    onChange={e => updateQuestion(item.uid, qi, { prompt: e.target.value })}
+                    rows={2}
+                  />
+                  <div className="ir-options">
+                    {q.options.map((opt, oi) => (
+                      <div key={oi} className="ir-option-row">
+                        {q.kind === 'multi' ? (
+                          <input type="checkbox" checked={q.answerIndexes.includes(oi)}
+                            onChange={() => toggleAnswer(item.uid, qi, oi)} />
+                        ) : (
+                          <input type="radio" name={`ir-${item.uid}-${q.id}`}
+                            checked={q.answerIndex === oi}
+                            onChange={() => toggleAnswer(item.uid, qi, oi)} />
+                        )}
+                        <span className="ir-opt-letter">{String.fromCharCode(65 + oi)}.</span>
+                        <input className="ir-opt-input" value={opt}
+                          onChange={e => updateOption(item.uid, qi, oi, e.target.value)}
+                          disabled={q.kind === 'judge'} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <button className="ir-btn-small" onClick={() => addManualQuestion(item.uid)}>
+                + 手动添加
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ---- Main render ----
 
   return (
     <div className="ir-panel">
       {/* Header */}
-      <div className="ir-header" onClick={() => setSettingsOpen(o => !o)}>
-        <span className="ir-header-title">{t('admin.ir.title')}</span>
-        <span className="ir-header-toggle">
-          {settingsOpen ? '▲ ' + t('admin.ir.collapse') : '▼ ' + t('admin.ir.expand')}
-        </span>
+      <div className="ir-panel-header">
+        <span className="ir-panel-title">{t('admin.ir.title')}</span>
+        <button
+          className="ir-btn-ghost"
+          onClick={() => setSettingsOpen(o => !o)}
+        >
+          {settingsOpen ? '▲ ' + t('admin.ir.collapse') : '⚙ ' + t('admin.ir.settings')}
+        </button>
       </div>
 
-      {!settingsOpen && (
-        <>
-          {/* Upload area */}
-          <div className="ir-body">
-            <div
-              className={'ir-upload' + (dragOver ? ' ir-upload-drag' : '') + (dataUrl ? ' ir-upload-hidden' : '')}
-              onClick={() => fileRef.current?.click()}
-              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={onDrop}
-            >
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={onFileChange}
-              />
-              <div className="ir-upload-icon">📷</div>
-              <div className="ir-upload-text">{t('admin.ir.uploadHint')}</div>
-              <div className="ir-upload-formats">{t('admin.ir.formats')}</div>
-            </div>
-
-            {/* Preview + results */}
-            {dataUrl && (
-              <div className="ir-content">
-                <div className="ir-preview-col">
-                  <img className="ir-preview-img" src={dataUrl} alt="preview" />
-                  <div className="ir-preview-actions">
-                    <button className="ir-btn-secondary" onClick={clearImage}>
-                      {t('admin.ir.reselect')}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="ir-result-col">
-                  {results === null ? (
-                    <div className="ir-actions">
-                      <button
-                        className="ir-btn-primary"
-                        onClick={recognize}
-                        disabled={recognizing}
-                      >
-                        {recognizing ? t('admin.ir.recognizing') : t('admin.ir.recognize')}
-                      </button>
-                      <button className="ir-btn-secondary" onClick={clearImage}>
-                        {t('admin.ir.clear')}
-                      </button>
-                    </div>
-                  ) : results.length > 0 ? (
-                    <div className="ir-results">
-                      <div className="ir-results-header">
-                        <span>{t('admin.ir.recognizedCount', { n: results.length })}</span>
-                        <button className="ir-btn-small" onClick={addResult}>+ 手动添加</button>
-                      </div>
-                      <div className="ir-results-list">
-                        {results.map((q, qi) => (
-                          <div key={q.id} className="ir-result-card">
-                            <div className="ir-result-head">
-                              <span className="ir-result-no">#{qi + 1}</span>
-                              <select
-                                value={q.kind}
-                                onChange={e => {
-                                  const kind = e.target.value as QuestionKind;
-                                  if (kind === 'judge') {
-                                    updateResult(qi, {
-                                      kind,
-                                      options: ['正确', '错误'],
-                                      answerIndex: 0,
-                                      answerIndexes: [],
-                                    });
-                                  } else if (kind === 'multi') {
-                                    updateResult(qi, {
-                                      kind,
-                                      answerIndexes: [q.answerIndex],
-                                    });
-                                  } else {
-                                    updateResult(qi, { kind: 'single', answerIndexes: [] });
-                                  }
-                                }}
-                              >
-                                <option value="single">{t('admin.kind.single')}</option>
-                                <option value="multi">{t('admin.kind.multi')}</option>
-                                <option value="judge">{t('admin.kind.judge')}</option>
-                              </select>
-                              <button className="ir-btn-del" onClick={() => removeResult(qi)}>
-                                {t('admin.delete')}
-                              </button>
-                            </div>
-                            <textarea
-                              className="ir-prompt-input"
-                              value={q.prompt}
-                              onChange={e => updateResult(qi, { prompt: e.target.value })}
-                              rows={2}
-                            />
-                            <div className="ir-options">
-                              {q.options.map((opt, oi) => (
-                                <div key={oi} className="ir-option-row">
-                                  {q.kind === 'multi' ? (
-                                    <input
-                                      type="checkbox"
-                                      checked={q.answerIndexes.includes(oi)}
-                                      onChange={() => toggleAnswer(qi, oi)}
-                                    />
-                                  ) : (
-                                    <input
-                                      type="radio"
-                                      name={`ir-ans-${q.id}`}
-                                      checked={q.answerIndex === oi}
-                                      onChange={() => toggleAnswer(qi, oi)}
-                                    />
-                                  )}
-                                  <span className="ir-opt-letter">{String.fromCharCode(65 + oi)}.</span>
-                                  <input
-                                    className="ir-opt-input"
-                                    value={opt}
-                                    onChange={e => updateOption(qi, oi, e.target.value)}
-                                    disabled={q.kind === 'judge'}
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="ir-actions">
-                        <button className="ir-btn-primary" onClick={handleAddToBank}>
-                          {t('admin.ir.addToBank')}
-                        </button>
-                        <button className="ir-btn-secondary" onClick={handleDiscard}>
-                          {t('admin.ir.discard')}
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            )}
-
-            {panelMsg && (
-              <div className={'ir-msg ' + (panelMsg.type === 'ok' ? 'ir-msg-ok' : 'ir-msg-err')}>
-                {panelMsg.text}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* AI Settings panel */}
+      {/* Settings (collapsible) */}
       {settingsOpen && (
         <div className="ir-settings">
           <div className="ir-settings-grid">
             <label className="ir-field">
               <span>{t('admin.ir.provider')}</span>
-              <select
-                value={configDraft.provider}
-                onChange={e => changeProvider(e.target.value as 'openai' | 'anthropic')}
-              >
+              <select value={configDraft.provider}
+                onChange={e => changeProvider(e.target.value as 'openai' | 'anthropic')}>
                 <option value="openai">{t('admin.ir.provider.openai')}</option>
                 <option value="anthropic">{t('admin.ir.provider.anthropic')}</option>
               </select>
             </label>
             <label className="ir-field">
               <span>{t('admin.ir.baseUrl')}</span>
-              <input
-                value={configDraft.baseUrl}
+              <input value={configDraft.baseUrl}
                 onChange={e => setConfigDraft(d => ({ ...d, baseUrl: e.target.value }))}
-                placeholder={PROVIDER_DEFAULTS[configDraft.provider].baseUrl}
-              />
+                placeholder={PROVIDER_DEFAULTS[configDraft.provider].baseUrl} />
             </label>
             <label className="ir-field">
               <span>{t('admin.ir.apiKey')}</span>
-              <input
-                type="password"
-                value={configDraft.apiKey}
+              <input type="password" value={configDraft.apiKey}
                 onChange={e => setConfigDraft(d => ({ ...d, apiKey: e.target.value }))}
-                placeholder={
-                  config.apiKey && config.apiKey.endsWith('****')
-                    ? config.apiKey
-                    : t('admin.ir.apiKeyPlaceholder')
-                }
-              />
+                placeholder={config.apiKey && config.apiKey.endsWith('****')
+                  ? config.apiKey : t('admin.ir.apiKeyPlaceholder')} />
             </label>
             <label className="ir-field">
               <span>{t('admin.ir.model')}</span>
-              <input
-                value={configDraft.model}
+              <input value={configDraft.model}
                 onChange={e => setConfigDraft(d => ({ ...d, model: e.target.value }))}
-                placeholder={PROVIDER_DEFAULTS[configDraft.provider].model}
-              />
+                placeholder={PROVIDER_DEFAULTS[configDraft.provider].model} />
             </label>
           </div>
           <div className="ir-settings-actions">
-            <button className="ir-btn-primary" onClick={saveSettings}>
+            <button className="ir-btn-primary ir-btn-sm" onClick={saveSettings}>
               {t('admin.ir.saveSettings')}
             </button>
             {settingsMsg && (
@@ -471,6 +499,64 @@ export default function ImageRecognitionPanel({ onAdd }: Props) {
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Upload area — always visible */}
+      <div
+        className={'ir-upload' + (dragOver ? ' ir-upload-drag' : '')}
+        onClick={() => fileRef.current?.click()}
+        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+      >
+        <input ref={fileRef} type="file" accept="image/*" multiple
+          style={{ display: 'none' }} onChange={onFileChange} />
+        <div className="ir-upload-icon">📷</div>
+        <div className="ir-upload-text">{t('admin.ir.uploadHint')}</div>
+        <div className="ir-upload-formats">{t('admin.ir.formats')}</div>
+      </div>
+
+      {/* Global toolbar (shows when queue has items) */}
+      {queue.length > 0 && (
+        <div className="ir-toolbar">
+          <div className="ir-toolbar-left">
+            <span className="ir-toolbar-count">
+              {queue.length} 张图片 · {totalQuestions} 道题目
+            </span>
+            {pendingItems.length > 0 && (
+              <button className="ir-btn-primary ir-btn-sm" onClick={recognizeAll}>
+                识别全部 ({pendingItems.length})
+              </button>
+            )}
+            {doneItems.length > 0 && (
+              <button className="ir-btn-secondary ir-btn-sm" onClick={clearDone}>
+                清除已完成
+              </button>
+            )}
+            <button className="ir-btn-secondary ir-btn-sm" onClick={clearAll}>
+              {t('admin.ir.clear')}
+            </button>
+          </div>
+          <div className="ir-toolbar-right">
+            {doneItems.length > 0 && (
+              <button className="ir-btn-primary" onClick={addToBank}>
+                {t('admin.ir.addToBank')} ({totalQuestions})
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Queue list */}
+      {queue.length > 0 && (
+        <div className="ir-queue">{queue.map(renderItem)}</div>
+      )}
+
+      {/* Global message */}
+      {globalMsg && (
+        <div className={'ir-msg ' + (globalMsg.type === 'ok' ? 'ir-msg-ok' : 'ir-msg-err')}>
+          {globalMsg.text}
         </div>
       )}
     </div>

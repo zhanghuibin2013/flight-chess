@@ -1,13 +1,15 @@
 // Question-bank admin — top-level router.
-// #admin                   → QuestionList  (browse, inline-edit, save)
-// #admin/questions         → QuestionList
-// #admin/questions/add     → QuestionAdd   (manual entry + image recognition)
+// #admin                             → QuestionList  (compact cards)
+// #admin/questions                   → QuestionList
+// #admin/questions/add               → QuestionAdd   (manual + image recognition)
+// #admin/questions/edit/{id}         → QuestionEdit  (standalone edit page)
 
 import React, { useCallback, useEffect, useState } from 'react';
 import type { QuestionRow } from '@fkzz/shared';
 import { useT } from '../i18n';
 import QuestionList, { type DraftRow, rowToDraft } from './QuestionList';
 import QuestionAdd from './QuestionAdd';
+import QuestionEdit from './QuestionEdit';
 
 function useHashRoute(): string {
   const [hash, setHash] = useState(window.location.hash);
@@ -19,22 +21,34 @@ function useHashRoute(): string {
   return hash;
 }
 
+/** Parse the hash into a route descriptor. */
+function parseRoute(hash: string): { page: 'list' | 'add' | 'edit'; id?: string } {
+  const clean = hash.replace(/^#\/?/, '');
+  if (clean === 'admin/questions/add' || clean === 'admin/add') {
+    return { page: 'add' };
+  }
+  const editMatch = clean.match(/admin\/questions\/edit\/(.+)/);
+  if (editMatch) {
+    return { page: 'edit', id: decodeURIComponent(editMatch[1]!) };
+  }
+  return { page: 'list' };
+}
+
 export default function QuestionBankAdmin() {
   const t = useT();
   const hash = useHashRoute();
+  const route = parseRoute(hash);
   const [rows, setRows] = useState<DraftRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [savedCount, setSavedCount] = useState(0);
   const [globalMsg, setGlobalMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  // Fetch questions from server.
   const fetchQuestions = useCallback(async (): Promise<QuestionRow[]> => {
     const res = await fetch('/admin/questions');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return (await res.json()) as QuestionRow[];
   }, []);
 
-  // Load questions on mount.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -54,23 +68,16 @@ export default function QuestionBankAdmin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Determine route: anything ending in /add → QuestionAdd, else → QuestionList
-  const isAddRoute = hash.endsWith('/add');
-
-  // How many rows were added but not yet saved.
   const pendingCount = Math.max(0, rows.length - savedCount);
 
-  // When new questions come from the add page, prepend to rows.
   const handleAddFromAddPage = (drafts: DraftRow[]) => {
     setRows(prev => [...drafts, ...prev]);
   };
 
-  // After a successful save from the list page, sync savedCount.
   const handleSaved = (count: number) => {
     setSavedCount(count);
   };
 
-  // Refresh: re-fetch from server, replacing local rows (discard unsaved edits).
   const handleRefresh = useCallback(async () => {
     const data = await fetchQuestions();
     setRows(data.map(rowToDraft));
@@ -81,6 +88,12 @@ export default function QuestionBankAdmin() {
     return <div className="qb-admin"><p>{t('admin.loading')}</p></div>;
   }
 
+  // Validate edit route: if the id doesn't match any row, fall back to list.
+  if (route.page === 'edit' && !rows.some(r => r.id === route.id)) {
+    window.location.hash = '#admin/questions';
+    return null;
+  }
+
   return (
     <>
       {globalMsg && (
@@ -88,8 +101,10 @@ export default function QuestionBankAdmin() {
           {globalMsg.text}
         </div>
       )}
-      {isAddRoute ? (
+      {route.page === 'add' ? (
         <QuestionAdd onSave={handleAddFromAddPage} />
+      ) : route.page === 'edit' ? (
+        <QuestionEdit questionId={route.id!} rows={rows} setRows={setRows} />
       ) : (
         <QuestionList
           rows={rows}

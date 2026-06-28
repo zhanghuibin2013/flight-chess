@@ -125,6 +125,12 @@ const ZH: Dict = {
   'admin.pullRelease':        '↑ 松开刷新',
   'admin.refresh':            '刷新',
   'admin.refreshConfirmLose': '有未保存的修改，刷新会丢失这些修改，确定继续？',
+  'admin.editTitle':          '编辑题目',
+  'admin.editSave':           '保存修改',
+  'admin.editSaved':          '✓ 修改已保存',
+  'admin.correctAnswer':      '正确答案',
+  'admin.totalCount':         '共 {n} 题',
+  'admin.err.notFound':       '题目未找到',
 
   // Image recognition panel
   'admin.ir.title':           '图片识别录入',
@@ -317,6 +323,10 @@ const ZH: Dict = {
   'combat.opt.counter':     '反击',
   'qa.title':               '答题挑战',
   'qa.submit':              '提交答案',
+  'qa.spectatorTitle':      '答题中…',
+  'qa.correct':             '✓ 回答正确',
+  'qa.wrong':               '✗ 回答错误',
+  'qa.skipCountdown':       '跳过',
 
   // Game Over
   'go.victory':             '胜利！',
@@ -500,6 +510,12 @@ const EN: Dict = {
   'admin.pullRelease':        '↑ Release to refresh',
   'admin.refresh':            'Refresh',
   'admin.refreshConfirmLose': 'You have unsaved changes. Refreshing will discard them. Continue?',
+  'admin.editTitle':          'Edit Question',
+  'admin.editSave':           'Save Changes',
+  'admin.editSaved':          '✓ Changes saved',
+  'admin.correctAnswer':      'Correct answer',
+  'admin.totalCount':         '{n} question(s) total',
+  'admin.err.notFound':       'Question not found',
 
   // Image recognition panel
   'admin.ir.title':           'Image Recognition',
@@ -692,6 +708,10 @@ const EN: Dict = {
   'combat.opt.counter':     'Counter',
   'qa.title':               'Q&A Challenge',
   'qa.submit':              'Submit Answer',
+  'qa.spectatorTitle':      'Answering…',
+  'qa.correct':             '✓ Correct!',
+  'qa.wrong':               '✗ Wrong',
+  'qa.skipCountdown':       'Skip',
 
   // Game Over
   'go.victory':             'Victory!',

@@ -163,6 +163,8 @@ export class GameEngine {
   state: GameState;
   private pendingCombat: PendingCombat | null = null;
   private pendingQA: PendingQA | null = null;
+  /** QA that has been answered but the client hasn't proceeded yet. */
+  private answeredQA: { questionId: string; seat: Color; answerIndex: number; correct: boolean } | null = null;
   /** Players actively playing this game, in turn order. */
   private playerSeats: Color[];
   /** Pending bonus rolls / steps queued for the current player (e.g. reward (1) reroll). */
@@ -959,6 +961,14 @@ export class GameEngine {
     if (!this.pendingQA || this.pendingQA.questionId !== questionId) return this.err('noQa');
     if (seat !== this.pendingQA.seat) return this.err('notYourQa');
     const correct = answerIndex === this.pendingQA.question.answerIndex;
+    // Record the answered QA for the proceed step.
+    this.answeredQA = { questionId, seat, answerIndex, correct };
+    // Broadcast the selected answer + correctness so all players can see it.
+    const qaPrompt = this.state.prompts.find(p => p.kind === 'qa');
+    if (qaPrompt && qaPrompt.kind === 'qa') {
+      qaPrompt.selectedAnswer = answerIndex;
+      qaPrompt.correct = correct;
+    }
     this.questions.discard(this.pendingQA.question);
     this.pendingQA = null;
     if (correct) {
@@ -968,16 +978,25 @@ export class GameEngine {
       this.logI18n('log.qaWrong', { color: seat });
       this.applyDrawnPunishment(seat);
     }
-    // Punishment may set up a pending combat (e.g. rerollBwd dice prompt).
-    // In that case, keep phase=awaitCombat and let combatRespond drive the
-    // turn forward — do NOT advance here.
+    // Commit the state with the selected answer visible. Do NOT advance yet —
+    // the client drives the 5-second countdown / skip, then sends qa:proceed.
+    this.commit();
+  }
+
+  /** Called after the client-side countdown expires (or skip is clicked). */
+  proceedAfterQA() {
+    if (!this.answeredQA) return;
+    this.answeredQA = null;
+    // Punishment may have set up a pending combat. Keep phase=awaitCombat and
+    // let combatRespond drive the turn forward.
     if (this.pendingCombat) {
+      this.state.prompts = [];
       this.commit();
       return;
     }
     this.state.prompts = [];
     if (this.state.phase === 'awaitQA') this.state.phase = 'resolving';
-    this.afterTurnAction(seat);
+    this.afterTurnAction(this.state.turn);
   }
 
   private applyDrawnReward(seat: Color) {

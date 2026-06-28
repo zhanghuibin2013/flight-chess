@@ -110,6 +110,8 @@ export class BotDriver {
     if (prompt.kind === 'qa') {
       const ans = bot.pickQAAnswer(prompt.questionId, prompt.options);
       this.engine.qaAnswer(seat, prompt.questionId, ans);
+      // Bots don't need the 5-second countdown — auto-proceed immediately.
+      this.engine.proceedAfterQA();
       return;
     }
     // 'card' prompt — bots don't proactively play held cards in v1.

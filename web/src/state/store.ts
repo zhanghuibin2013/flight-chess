@@ -53,6 +53,7 @@ interface Store {
   choosePlane(planeIndex: number): void;
   combatRespond(combatId: string, choice: string, data?: Record<string, unknown>): void;
   qaAnswer(questionId: string, answerIndex: number): void;
+  qaProceed(): void;
   playCard(cardId: string, opts?: { targetColor?: Color; targetPlaneIndex?: number; targetRadarIndex?: number }): void;
   chatSay(message: string): void;
 
@@ -63,6 +64,8 @@ interface Store {
   mySeat(): Color | null;
   isMyTurn(): boolean;
   myPrompt(): Prompt | null;
+  /** The active QA prompt visible to ALL players (not filtered by seat). */
+  qaPrompt(): Prompt | null;
 }
 
 export const useStore = create<Store>((set, get) => {
@@ -235,6 +238,7 @@ export const useStore = create<Store>((set, get) => {
     choosePlane(planeIndex) { sock.emit(C2S.TurnMove, { planeIndex }); },
     combatRespond(combatId, choice, data) { sock.emit(C2S.CombatRespond, { combatId, choice, data }); },
     qaAnswer(questionId, answerIndex) { sock.emit(C2S.QAAnswer, { questionId, answerIndex }); },
+    qaProceed() { sock.emit(C2S.QAProceed, {}); },
     playCard(cardId, opts) { sock.emit(C2S.CardPlay, { cardId, ...opts }); },
     chatSay(message) { sock.emit(C2S.ChatSay, { message }); },
 
@@ -256,6 +260,11 @@ export const useStore = create<Store>((set, get) => {
       const seat = get().mySeat();
       const prompts = get().state?.prompts ?? [];
       return prompts.find(p => p.seat === seat) ?? null;
+    },
+    /** The active QA prompt visible to ALL players (not filtered by seat). */
+    qaPrompt() {
+      const prompts = get().state?.prompts ?? [];
+      return prompts.find(p => p.kind === 'qa') ?? null;
     },
   };
 });

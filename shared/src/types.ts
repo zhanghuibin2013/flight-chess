@@ -168,7 +168,7 @@ export type Prompt =
        *  to localized labels via i18n keys like 'combat.opt.<id>'. */
       options: string[];
     }
-  | { kind: 'qa'; seat: Color; questionId: string; prompt: string; options: string[] };
+  | { kind: 'qa'; seat: Color; questionId: string; prompt: string; options: string[]; selectedAnswer?: number; correct?: boolean };
 
 export interface DeckCounts {
   aam: number; sam: number; arm: number; cruise: number;

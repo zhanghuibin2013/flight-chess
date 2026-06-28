@@ -24,6 +24,7 @@ export const C2S = {
   CardPlay:      'card:play',
   CombatRespond: 'combat:respond',
   QAAnswer:      'qa:answer',
+  QAProceed:     'qa:proceed',
   ChatSay:       'chat:say',
 } as const;
 
@@ -83,6 +84,9 @@ export const CombatRespondZ = z.object({
 export const QAAnswerZ = z.object({
   questionId: z.string(),
   answerIndex: z.number().int().min(0).max(3),
+});
+export const QAProceedZ = z.object({
+  questionId: z.string().optional(),
 });
 export const ChatSayZ = z.object({ message: z.string().min(1).max(200) });
 export const SessionResumeZ = z.object({

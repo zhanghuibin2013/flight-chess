@@ -105,6 +105,23 @@ h1,h2,h3,h4{font-weight:700}
 .game-main{flex:1;display:flex;align-items:stretch;justify-content:center;min-width:0;min-height:0}
 .game-side{width:320px;display:flex;flex-direction:column;gap:8px;flex-shrink:0;min-height:0;overflow-y:auto}
 
+/* Tablet: shrink sidebar, keep side-by-side */
+@media (max-width: 960px){
+  .game-side{width:260px}
+}
+
+/* Phone: stack vertically — board on top, sidebar below */
+@media (max-width: 720px){
+  .game{flex-direction:column;height:auto;min-height:calc(100vh - 32px)}
+  .game-main{flex:none;width:100%;aspect-ratio:1/1;max-height:55vh}
+  .game-side{width:100%;flex:none;max-height:45vh;padding:0 4px}
+  /* Compact sidebar panels on mobile */
+  .action-panel,.hud,.room-info,.log-panel{padding:8px 10px}
+  .action-panel h3,.hud h3{font-size:12px;margin-bottom:4px}
+  .log-panel{max-height:120px}
+  .action-panel .arsenal-section{margin-bottom:4px}
+}
+
 /* ===== Board (SVG) ===== */
 .board{border:2px solid #ddd;border-radius:var(--radius);background:#fafafa;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain}
 .plane{transition:all .25s}
@@ -225,6 +242,30 @@ details.hand[open] > summary{margin-bottom:4px}
 .qa-options label:hover{background:#f5f5f5}
 .qa-options label.selected{border-color:var(--blue);background:#e3f2fd}
 .qa-options input[type=radio]{flex-shrink:0;width:18px;height:18px;accent-color:var(--blue)}
+
+/* QA spectator banner — visible to non-answering players */
+.qa-spectator{position:fixed;top:60px;left:50%;transform:translateX(-50%);min-width:300px;max-width:90vw;background:var(--surface);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.14);padding:14px 20px;z-index:50;animation:fadeIn .2s;border:1px solid #e0e0e0}
+.qa-spec-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.qa-spec-title[data-correct="true"]{color:#2e7d32}
+.qa-spec-title[data-correct="false"]{color:#c62828}
+.qa-spec-prompt{font-size:13px;line-height:1.5;color:var(--text);margin:0 0 8px 0;word-break:break-word}
+.qa-spec-options{display:flex;flex-wrap:wrap;gap:4px 12px}
+.qa-spec-opt{font-size:12px;color:var(--muted);line-height:1.3}
+.qa-spec-correct{color:#2e7d32;font-weight:700}
+.qa-spec-wrong{color:#c62828;font-weight:700}
+.qa-spec-footer{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:8px;border-top:1px solid #eee}
+.qa-spec-timer{font-size:14px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.qa-spec-skip{padding:3px 10px;font-size:12px;background:#f5f5f5;border:1px solid #ddd;border-radius:var(--radius);cursor:pointer}
+.qa-spec-skip:hover{background:#e3f2fd;border-color:#1976d2}
+
+/* Answered modal: result bar + option highlights */
+.qa-result-bar{display:flex;align-items:center;gap:12px;margin-top:12px;padding-top:10px;border-top:1px solid #eee}
+.qa-result-correct{font-size:14px;font-weight:700;color:#2e7d32}
+.qa-result-wrong{font-size:14px;font-weight:700;color:#c62828}
+.qa-timer{font-size:16px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;margin-left:auto}
+.qa-opt-correct label{border-color:#2e7d32 !important;background:#e8f5e9 !important}
+.qa-opt-wrong label{border-color:#c62828 !important;background:#ffebee !important}
+.qa-opt-marker{font-weight:700;min-width:18px;display:inline-block}
 
 /* ===== Game Over Overlay ===== */
 .gameover-overlay{position:fixed;inset:0;background:rgba(10,15,30,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:1000;animation:goFadeIn .35s ease both}
@@ -496,3 +537,53 @@ details.hand[open] > summary{margin-bottom:4px}
   .aa-pending-header{flex-direction:column;gap:8px;align-items:flex-start}
 }
 
+
+/* ===== Compact Question List (.qbc-*) ===== */
+.qb-list-compact{display:flex;flex-direction:column;gap:6px}
+.qb-card-compact{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;background:var(--surface);border:1px solid #e0e0e0;border-radius:var(--radius);cursor:pointer;transition:all .15s}
+.qb-card-compact:hover{border-color:#90caf9;background:#f8fbff;box-shadow:0 1px 4px rgba(25,118,210,.08)}
+.qbc-main{flex:1;min-width:0}
+.qbc-top{display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap}
+.qbc-no{font-weight:700;font-size:12px;color:var(--muted);min-width:28px}
+.qbc-kind{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;text-transform:uppercase}
+.qbc-kind-single{background:#e3f2fd;color:#1565c0}
+.qbc-kind-multi{background:#f3e5f5;color:#7b1fa2}
+.qbc-kind-judge{background:#e8f5e9;color:#2e7d32}
+.qbc-answer{font-size:11px;color:#2e7d32;font-weight:600;margin-left:auto}
+.qbc-prompt{font-size:13px;line-height:1.4;color:var(--text);margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.qbc-empty-hint{color:#bbb;font-size:12px}
+.qbc-opts{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:6px}
+.qbc-opt{font-size:11px;color:var(--muted);line-height:1.3;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;max-width:200px}
+.qbc-opt-correct{color:#1976d2;font-weight:600}
+.qbc-actions{display:flex;flex-direction:row;gap:4px;flex-shrink:0}
+.qb-count-label{font-size:12px;color:var(--muted);font-weight:600}
+
+/* ===== Question Edit Page (.qe-*) ===== */
+.qe-page{width:900px;max-width:100%;margin:0 auto;padding:24px}
+.qe-header{display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.qe-back{font-size:13px;color:#1976d2;text-decoration:none;white-space:nowrap}
+.qe-back:hover{text-decoration:underline}
+.qe-header h1{font-size:20px;font-weight:700;flex:1;margin:0}
+.qe-actions{display:flex;gap:8px}
+.qe-btn-del{padding:6px 14px;font-size:13px;background:#ffebee;color:#c62828;border:1px solid #ef9a9a;border-radius:var(--radius);cursor:pointer}
+.qe-btn-del:hover{background:#ffcdd2}
+.qe-form{background:var(--surface);border-radius:var(--radius);padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid #e0e0e0}
+.qe-meta{display:flex;align-items:center;gap:10px;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid #eee}
+.qe-id{font-family:'Courier New',monospace;font-size:12px;color:var(--muted)}
+.qe-idx{font-weight:700;font-size:14px;color:var(--text)}
+.qe-field{display:flex;flex-direction:column;gap:4px;margin-bottom:16px}
+.qe-field>span{font-size:12px;font-weight:600;color:var(--muted)}
+.qe-field select{padding:8px 10px;font-size:13px;border:1px solid #ccc;border-radius:var(--radius);max-width:240px}
+.qe-options-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.qe-options-head span{font-size:12px;font-weight:600;color:var(--muted)}
+
+@media (max-width: 720px){
+  .qe-page{padding:12px}
+  .qe-header{flex-direction:column;align-items:stretch;gap:10px}
+  .qe-header h1{order:2}
+  .qe-actions{justify-content:flex-end}
+  .qb-card-compact{padding:10px}
+  .qbc-opts{display:none}
+
+  .qbc-opt{max-width:140px}
+}

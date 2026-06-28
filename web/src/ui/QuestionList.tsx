@@ -1,11 +1,11 @@
-// Admin list page — browse, filter, inline-edit, delete, reorder, and save
-// the question bank.  A banner reminds the user to persist changes.
+// Admin list page — compact read-only cards.  Click a card to edit it on a
+// dedicated page; use the action buttons to delete or reorder.
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import type { QuestionRow, QuestionKind } from '@fkzz/shared';
 import { useT } from '../i18n';
 
-// ---- Shared helpers (duplicated from the old QuestionBankAdmin) ----
+// ---- Shared helpers (re-used by QuestionEdit / QuestionAdd) ----
 
 export interface DraftRow {
   id: string;
@@ -59,17 +59,19 @@ export function validateDraft(d: DraftRow, t: (k: string) => string): string | n
   return null;
 }
 
-// ---- Auto-resize textarea ----
+// ---- Helpers ----
 
-function AutoTextarea(props: { value: string; onChange: (v: string) => void; placeholder?: string }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = el.scrollHeight + 'px';
-  }, [props.value]);
-  return <textarea ref={ref} className="qb-autogrow" value={props.value} onChange={e => props.onChange(e.target.value)} placeholder={props.placeholder} rows={2} />;
+const KIND_LABELS: Record<QuestionKind, string> = {
+  single: 'admin.kind.single',
+  multi: 'admin.kind.multi',
+  judge: 'admin.kind.judge',
+};
+
+function correctLabel(row: DraftRow, t: (k: string) => string): string {
+  if (row.kind === 'multi') {
+    return row.answerIndexes.map(i => String.fromCharCode(65 + i)).join(', ') || '—';
+  }
+  return String.fromCharCode(65 + row.answerIndex);
 }
 
 // ---- Component ----
@@ -89,7 +91,7 @@ export default function QuestionList({ rows, setRows, pendingCount, onSaved, onR
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
-  // Pull-to-refresh state (mobile)
+  // Pull-to-refresh
   const touchStartY = useRef(0);
   const [pullDistance, setPullDistance] = useState(0);
   const PULL_THRESHOLD = 60;
@@ -97,89 +99,36 @@ export default function QuestionList({ rows, setRows, pendingCount, onSaved, onR
   const handleRefresh = useCallback(async () => {
     if (!onRefresh || refreshing || saving) return;
     if (pendingCount > 0) {
-      const ok = confirm(t('admin.refreshConfirmLose'));
-      if (!ok) { setPullDistance(0); return; }
+      if (!confirm(t('admin.refreshConfirmLose'))) { setPullDistance(0); return; }
     }
     setRefreshing(true);
-    try {
-      await onRefresh();
-    } finally {
-      setRefreshing(false);
-      setPullDistance(0);
-    }
+    try { await onRefresh(); } finally { setRefreshing(false); setPullDistance(0); }
   }, [onRefresh, refreshing, saving, pendingCount, t]);
 
-  // Touch handlers for pull-to-refresh
   const onTouchStart = useCallback((e: React.TouchEvent) => {
-    // Only activate when at top of page
-    if (window.scrollY === 0) {
-      touchStartY.current = e.touches[0]!.clientY;
-    }
+    if (window.scrollY === 0) touchStartY.current = e.touches[0]!.clientY;
   }, []);
-
   const onTouchMove = useCallback((e: React.TouchEvent) => {
     if (touchStartY.current === 0) return;
-    const deltaY = e.touches[0]!.clientY - touchStartY.current;
-    if (deltaY > 0 && window.scrollY === 0) {
-      setPullDistance(Math.min(deltaY * 0.5, 100));
-    }
+    const dy = e.touches[0]!.clientY - touchStartY.current;
+    if (dy > 0 && window.scrollY === 0) setPullDistance(Math.min(dy * 0.5, 100));
   }, []);
-
   const onTouchEnd = useCallback(() => {
-    if (pullDistance >= PULL_THRESHOLD) {
-      handleRefresh();
-    } else {
-      setPullDistance(0);
-    }
+    if (pullDistance >= PULL_THRESHOLD) handleRefresh();
+    else setPullDistance(0);
     touchStartY.current = 0;
   }, [pullDistance, handleRefresh]);
 
-  // ---- Row operations ----
+  // ---- Row operations (lightweight: delete + reorder only) ----
 
-  const updateRow = (idx: number, patch: Partial<DraftRow>) =>
-    setRows(prev => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
-
-  const removeRow = (idx: number) => {
+  const removeRow = (e: React.MouseEvent, idx: number) => {
+    e.stopPropagation();
     if (!confirm(t('admin.confirmDelete'))) return;
     setRows(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const addOption = (idx: number) =>
-    setRows(prev => prev.map((r, i) => i === idx ? { ...r, options: [...r.options, ''] } : r));
-
-  const removeOption = (idx: number, optIdx: number) => {
-    setRows(prev => prev.map((r, i) => {
-      if (i !== idx) return r;
-      if (r.options.length <= 2) return r;
-      const options = r.options.filter((_, j) => j !== optIdx);
-      let answerIndex = r.answerIndex;
-      if (optIdx < answerIndex) answerIndex--;
-      else if (optIdx === answerIndex) answerIndex = 0;
-      const answerIndexes = r.answerIndexes.filter(ix => ix !== optIdx).map(ix => ix > optIdx ? ix - 1 : ix);
-      return { ...r, options, answerIndex, answerIndexes };
-    }));
-  };
-
-  const setOption = (idx: number, optIdx: number, value: string) =>
-    setRows(prev => prev.map((r, i) => i !== idx ? r : { ...r, options: r.options.map((o, j) => j === optIdx ? value : o) }));
-
-  const toggleMultiAnswer = (idx: number, optIdx: number) =>
-    setRows(prev => prev.map((r, i) => {
-      if (i !== idx) return r;
-      const has = r.answerIndexes.includes(optIdx);
-      const next = has ? r.answerIndexes.filter(x => x !== optIdx) : [...r.answerIndexes, optIdx];
-      return { ...r, answerIndexes: next.sort((a, b) => a - b) };
-    }));
-
-  const changeKind = (idx: number, kind: QuestionKind) =>
-    setRows(prev => prev.map((r, i) => {
-      if (i !== idx) return r;
-      if (kind === 'judge') return { ...r, kind, options: [t('admin.judge.true'), t('admin.judge.false')], answerIndex: 0, answerIndexes: [] };
-      if (kind === 'multi') return { ...r, kind, answerIndexes: r.answerIndexes.length ? r.answerIndexes : [r.answerIndex] };
-      return { ...r, kind: 'single', answerIndexes: [] };
-    }));
-
-  const moveRow = (from: number, to: number) => {
+  const moveRow = (e: React.MouseEvent, from: number, to: number) => {
+    e.stopPropagation();
     setRows(prev => {
       const next = [...prev];
       const [item] = next.splice(from, 1);
@@ -196,13 +145,12 @@ export default function QuestionList({ rows, setRows, pendingCount, onSaved, onR
       const err = validateDraft(rows[i]!, t);
       if (err) { setMessage({ type: 'err', text: `#${i + 1}: ${err}` }); return; }
     }
-    const payload = rows.map(draftToRow);
     setSaving(true);
     try {
       const res = await fetch('/admin/questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(rows.map(draftToRow)),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
@@ -221,8 +169,6 @@ export default function QuestionList({ rows, setRows, pendingCount, onSaved, onR
     .map((row, i) => ({ row, idx: i }))
     .filter(({ row }) => filterKind === 'all' || row.kind === filterKind);
 
-  const dirtyCount = pendingCount;
-
   // ---- Render ----
 
   return (
@@ -232,30 +178,21 @@ export default function QuestionList({ rows, setRows, pendingCount, onSaved, onR
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      {/* Pull-to-refresh indicator */}
+      {/* Pull-to-refresh */}
       <div
         className={'qb-pull-indicator' + (pullDistance > 0 ? ' qb-pull-visible' : '') + (refreshing ? ' qb-pull-active' : '')}
         style={{ height: pullDistance }}
       >
-        {refreshing ? (
-          <span className="qb-pull-spinner" />
-        ) : pullDistance >= PULL_THRESHOLD ? (
-          <span>{t('admin.pullRelease')}</span>
-        ) : (
-          <span>{t('admin.pullDown')}</span>
-        )}
+        {refreshing ? <span className="qb-pull-spinner" />
+          : pullDistance >= PULL_THRESHOLD ? <span>{t('admin.pullRelease')}</span>
+          : <span>{t('admin.pullDown')}</span>}
       </div>
 
       {/* Header */}
       <div className="qb-header">
         <h1>{t('admin.listTitle')}</h1>
         <div className="qb-header-actions">
-          <button
-            className="ghost qb-refresh-btn"
-            onClick={handleRefresh}
-            disabled={refreshing || saving}
-            title={t('admin.refresh')}
-          >
+          <button className="ghost qb-refresh-btn" onClick={handleRefresh} disabled={refreshing || saving} title={t('admin.refresh')}>
             {refreshing ? '…' : '↻'}
           </button>
           <a href="#admin/questions/add" className="btn-add-link">{t('admin.addQuestion')}</a>
@@ -265,17 +202,12 @@ export default function QuestionList({ rows, setRows, pendingCount, onSaved, onR
         </div>
       </div>
 
-      {/* Pending-save banner */}
-      {dirtyCount > 0 && (
-        <div className="qb-banner qb-banner-warn">
-          {t('admin.pendingSave', { n: dirtyCount })}
-        </div>
+      {pendingCount > 0 && (
+        <div className="qb-banner qb-banner-warn">{t('admin.pendingSave', { n: pendingCount })}</div>
       )}
 
       {message && (
-        <div className={'qb-msg ' + (message.type === 'ok' ? 'qb-msg-ok' : 'qb-msg-err')}>
-          {message.text}
-        </div>
+        <div className={'qb-msg ' + (message.type === 'ok' ? 'qb-msg-ok' : 'qb-msg-err')}>{message.text}</div>
       )}
 
       {/* Toolbar */}
@@ -289,62 +221,47 @@ export default function QuestionList({ rows, setRows, pendingCount, onSaved, onR
             <option value="judge">{t('admin.kind.judge')} ({rows.filter(r => r.kind === 'judge').length})</option>
           </select>
         </div>
-        <div className="qb-header-actions qb-toolbar-actions">
-          <a href="#admin/questions/add" className="btn-add-link">{t('admin.addQuestion')}</a>
-        </div>
+        <span className="qb-count-label">{t('admin.totalCount', { n: rows.length })}</span>
       </div>
 
-      {/* List */}
+      {/* Compact list */}
       {visibleRows.length === 0 ? (
         <p className="qb-empty">{t('admin.empty')}</p>
       ) : (
-        <ul className="qb-list">
+        <ul className="qb-list qb-list-compact">
           {visibleRows.map(({ row, idx }) => (
-            <li key={row.id} className="qb-card">
-              <div className="qb-card-head">
-                <span className="qb-card-no">#{idx + 1}</span>
-                <div className="qb-sort-buttons">
-                  <button className="qb-sort-btn" onClick={() => moveRow(idx, idx - 1)} disabled={idx === 0} title={t('admin.moveUp')}>↑</button>
-                  <button className="qb-sort-btn" onClick={() => moveRow(idx, idx + 1)} disabled={idx >= visibleRows.length - 1} title={t('admin.moveDown')}>↓</button>
+            <li
+              key={row.id}
+              className="qb-card-compact"
+              onClick={() => { window.location.hash = `#admin/questions/edit/${row.id}`; }}
+            >
+              <div className="qbc-main">
+                <div className="qbc-top">
+                  <span className="qbc-no">#{idx + 1}</span>
+                  <span className={'qbc-kind qbc-kind-' + row.kind}>{t(KIND_LABELS[row.kind])}</span>
+                  <span className="qbc-answer" title={t('admin.correctAnswer')}>
+                    ✓ {correctLabel(row, t)}
+                  </span>
                 </div>
-                <select className="qb-kind-select" value={row.kind} onChange={e => changeKind(idx, e.target.value as QuestionKind)}>
-                  <option value="single">{t('admin.kind.single')}</option>
-                  <option value="multi">{t('admin.kind.multi')}</option>
-                  <option value="judge">{t('admin.kind.judge')}</option>
-                </select>
-                <input className="qb-id" value={row.id} onChange={e => updateRow(idx, { id: e.target.value })} placeholder="id" />
-                <button className="qb-del" onClick={() => removeRow(idx)}>{t('admin.delete')}</button>
-              </div>
-
-              <label className="qb-field">
-                <span>{t('admin.prompt')}</span>
-                <AutoTextarea value={row.prompt} onChange={v => updateRow(idx, { prompt: v })} placeholder={t('admin.promptPlaceholder')} />
-              </label>
-
-              <div className="qb-options">
-                <div className="qb-options-head">
-                  <span>{t('admin.options')}</span>
-                  {row.kind !== 'judge' && (
-                    <button className="qb-add-opt" onClick={() => addOption(idx)}>+ {t('admin.addOption')}</button>
-                  )}
-                </div>
-                {row.options.map((opt, optIdx) => (
-                  <div key={optIdx} className="qb-option-row">
-                    {row.kind === 'multi' ? (
-                      <input type="checkbox" checked={row.answerIndexes.includes(optIdx)} onChange={() => toggleMultiAnswer(idx, optIdx)} title={t('admin.markCorrect')} />
-                    ) : (
-                      <input type="radio" name={`ans-${row.id}`} checked={row.answerIndex === optIdx} onChange={() => updateRow(idx, { answerIndex: optIdx })} title={t('admin.markCorrect')} />
-                    )}
-                    <span className="qb-option-letter">{String.fromCharCode(65 + optIdx)}.</span>
-                    <input className="qb-option-input" value={opt} onChange={e => setOption(idx, optIdx, e.target.value)} placeholder={t('admin.optionPlaceholder')} disabled={row.kind === 'judge'} />
-                    {row.kind !== 'judge' && row.options.length > 2 && (
-                      <button className="qb-rm-opt" onClick={() => removeOption(idx, optIdx)} title={t('admin.removeOption')}>×</button>
-                    )}
+                <p className="qbc-prompt">{row.prompt || <em className="qbc-empty-hint">{t('admin.err.noPrompt')}</em>}</p>
+                {row.kind !== 'judge' && (
+                  <div className="qbc-opts">
+                    {row.options.map((opt, oi) => (
+                      <span key={oi} className={'qbc-opt' + (
+                        row.kind === 'multi'
+                          ? (row.answerIndexes.includes(oi) ? ' qbc-opt-correct' : '')
+                          : (row.answerIndex === oi ? ' qbc-opt-correct' : '')
+                      )}>
+                        {String.fromCharCode(65 + oi)}. {opt}
+                      </span>
+                    ))}
                   </div>
-                ))}
-                {row.kind === 'multi' && (
-                  <p className="qb-hint">{t('admin.multiHint', { ans: row.answerIndexes.map(i => String.fromCharCode(65 + i)).join(', ') || '—' })}</p>
                 )}
+              </div>
+              <div className="qbc-actions" onClick={e => e.stopPropagation()}>
+                <button className="qb-sort-btn" onClick={e => moveRow(e, idx, idx - 1)} disabled={idx === 0} title={t('admin.moveUp')}>↑</button>
+                <button className="qb-sort-btn" onClick={e => moveRow(e, idx, idx + 1)} disabled={idx >= visibleRows.length - 1} title={t('admin.moveDown')}>↓</button>
+                <button className="qb-del" onClick={e => removeRow(e, idx)}>{t('admin.delete')}</button>
               </div>
             </li>
           ))}

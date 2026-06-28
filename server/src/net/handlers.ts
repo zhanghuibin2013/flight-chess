@@ -3,7 +3,7 @@
 import type { Server, Socket } from 'socket.io';
 import {
   C2S, S2C, LobbyCreateZ, LobbyJoinZ, RoomClaimSeatZ, RoomReadyZ, RoomSetOptsZ,
-  TurnRollZ, TurnTakeoffZ, TurnMoveZ, CardPlayZ, CombatRespondZ, QAAnswerZ, ChatSayZ,
+  TurnRollZ, TurnTakeoffZ, TurnMoveZ, CardPlayZ, CombatRespondZ, QAAnswerZ, QAProceedZ, ChatSayZ,
   SessionResumeZ, RoomAddBotZ, RoomRemoveBotZ, PlayerSetAutopilotZ,
 } from '@fkzz/shared';
 import type {
@@ -298,6 +298,11 @@ export function bindHandlers(io: Server, registry: RoomRegistry, getQuestions: (
       const seat = seatOfPlayer(room, player.id);
       if (!seat) return;
       room.engine!.qaAnswer(seat, parsed.data.questionId, parsed.data.answerIndex);
+    }));
+
+    // Any player can send qa:proceed to advance after the countdown / skip.
+    socket.on(C2S.QAProceed, (_raw: unknown) => withGame(registry, socket, (room) => {
+      room.engine!.proceedAfterQA();
     }));
 
     socket.on(C2S.ChatSay, (raw: unknown) => {

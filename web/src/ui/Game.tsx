@@ -14,11 +14,17 @@ export default function Game() {
   const state = useStore(s => s.state);
   const board = useStore(s => s.board);
   const myPrompt = useStore(s => s.myPrompt());
+  const qaPrompt = useStore(s => s.qaPrompt());
   const t = useT();
 
   if (!state || !board) {
     return <div className="loading">{t('game.loading')}</div>;
   }
+
+  // Determine if the current player is the one who should answer the QA.
+  const isAnsweringQA = myPrompt?.kind === 'qa';
+  // Show the QA to everyone: answering player gets the modal, others get a spectator banner.
+  const showQA = qaPrompt?.kind === 'qa' ? qaPrompt : null;
 
   return (
     <div className="game">
@@ -32,7 +38,8 @@ export default function Game() {
         <LogPanel />
       </aside>
       {myPrompt?.kind === 'combat' && <CombatModal prompt={myPrompt} />}
-      {myPrompt?.kind === 'qa' && <QAPrompt prompt={myPrompt} />}
+      {isAnsweringQA && <QAPrompt prompt={myPrompt} />}
+      {showQA && !isAnsweringQA && <QAPrompt prompt={showQA} readOnly />}
       <GameOverOverlay />
     </div>
   );

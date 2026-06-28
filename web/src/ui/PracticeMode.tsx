@@ -116,13 +116,25 @@ export default function PracticeMode() {
   }, [selected, current]);
 
   const nextQuestion = useCallback(() => {
+    // If reviewing history and not at the most recent entry, move forward.
+    if (reviewIdx !== null && reviewIdx < history.length - 1) {
+      const nextIdx = reviewIdx + 1;
+      const entry = history[nextIdx]!;
+      setCurrent(entry.question);
+      setSelected(entry.userAnswer);
+      setAnswered(true);
+      setIsCorrect(entry.isCorrect);
+      setReviewIdx(nextIdx);
+      return;
+    }
+    // Otherwise: pick a new random question.
     if (questions.length === 0) return;
     setCurrent(prev => pickRandom(questions, prev ?? undefined));
     setSelected(null);
     setAnswered(false);
     setIsCorrect(false);
     setReviewIdx(null);
-  }, [questions]);
+  }, [questions, reviewIdx, history]);
 
   const prevQuestion = useCallback(() => {
     if (history.length === 0) return;
@@ -264,7 +276,7 @@ export default function PracticeMode() {
             <button
               className="practice-btn-secondary"
               onClick={prevQuestion}
-              disabled={history.length <= 1 && reviewIdx === null}
+              disabled={history.length === 0 || reviewIdx === 0}
             >
               ← {t('practice.prev')}
             </button>

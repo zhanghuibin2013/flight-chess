@@ -165,12 +165,18 @@ export default function Lobby() {
         )}
       </div>
 
-      {/* Footer: admin (question-bank) entry. */}
+      {/* Footer: admin + practice entry. */}
       <div className="lobby-footer">
         <a
           className="lobby-admin-link"
+          href="#practice"
+        >
+           {t('lobby.practiceLink')}
+        </a>
+        <span className="lobby-footer-sep">·</span>
+        <a
+          className="lobby-admin-link"
           href="#admin"
-          onClick={() => { /* hashchange triggers App route switch */ }}
         >
           📝 {t('lobby.adminLink')}
         </a>

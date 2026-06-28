@@ -6,30 +6,49 @@ import Game from './ui/Game';
 import LanguageSwitch from './ui/LanguageSwitch';
 import HostAbandonBanner from './ui/HostAbandonBanner';
 import QuestionBankAdmin from './ui/QuestionBankAdmin';
+import PracticeMode from './ui/PracticeMode';
 
-/** Returns true while the URL hash addresses the admin sub-app. */
-function useIsAdminRoute(): boolean {
-  const [isAdmin, setIsAdmin] = useState(() =>
-    typeof window !== 'undefined' && window.location.hash.startsWith('#admin'));
+/** Returns the current route category based on the URL hash. */
+function useRoute(): 'game' | 'admin' | 'practice' {
+  const [route, setRoute] = useState<'game' | 'admin' | 'practice'>(() => {
+    const h = typeof window !== 'undefined' ? window.location.hash : '';
+    if (h.startsWith('#admin')) return 'admin';
+    if (h.startsWith('#practice')) return 'practice';
+    return 'game';
+  });
   useEffect(() => {
-    const onHash = () => setIsAdmin(window.location.hash.startsWith('#admin'));
+    const onHash = () => {
+      const h = window.location.hash;
+      if (h.startsWith('#admin')) setRoute('admin');
+      else if (h.startsWith('#practice')) setRoute('practice');
+      else setRoute('game');
+    };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-  return isAdmin;
+  return route;
 }
 
 export default function App() {
   const screen = useStore(s => s.screen);
   const lastError = useStore(s => s.lastError);
-  const isAdmin = useIsAdminRoute();
+  const route = useRoute();
 
-  if (isAdmin) {
-    // Admin is a stand-alone view (no game HUD, no language switch banner).
+  if (route === 'admin') {
     return (
       <div className="app">
         <LanguageSwitch />
         <QuestionBankAdmin />
+        {lastError && <div className="toast-error">{lastError}</div>}
+      </div>
+    );
+  }
+
+  if (route === 'practice') {
+    return (
+      <div className="app">
+        <LanguageSwitch />
+        <PracticeMode />
         {lastError && <div className="toast-error">{lastError}</div>}
       </div>
     );

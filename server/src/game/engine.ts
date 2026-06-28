@@ -182,8 +182,9 @@ export class GameEngine {
     seats: Color[],
     questions: QuestionRow[],
     private cb: EngineCallbacks,
+    seed?: number,
   ) {
-    this.board = buildBoard();
+    this.board = buildBoard(seed);
     this.questions = buildQuestionDeck(questions);
     this.missileDeck = buildMissileFactoryDeck();
     this.radarDeck = buildRadarDeck() as unknown as Deck<{ id: string; type: 'radar' }>;

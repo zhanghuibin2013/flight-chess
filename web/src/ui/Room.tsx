@@ -63,10 +63,14 @@ export default function Room() {
   const onCollisionAllEnemiesChange = (v: boolean) => {
     setOptions({ ...room.options, collisionAllEnemies: v });
   };
+  const onRandomBoardChange = (v: boolean) => {
+    setOptions({ ...room.options, randomBoard: v });
+  };
 
   // Backward-compat: rooms created before this option was added may have
   // these fields undefined; treat undefined as the strict rulebook default.
   const collisionAllEnemies = room.options.collisionAllEnemies ?? false;
+  const randomBoard = room.options.randomBoard ?? false;
 
   return (
     <div className="room">
@@ -162,6 +166,19 @@ export default function Room() {
             />
           ) : (
             <span className="option-value">{t(collisionAllEnemies ? 'common.on' : 'common.off')}</span>
+          )}
+        </div>
+        <div className="option-row">
+          <label className="option-label">{t('room.randomBoard')}</label>
+          {isHost ? (
+            <input
+              type="checkbox"
+              className="option-input"
+              checked={randomBoard}
+              onChange={e => onRandomBoardChange(e.target.checked)}
+            />
+          ) : (
+            <span className="option-value">{t(randomBoard ? 'common.on' : 'common.off')}</span>
           )}
         </div>
       </div>

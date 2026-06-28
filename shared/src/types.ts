@@ -134,6 +134,9 @@ export interface GameOptions {
    *  stack returns; single enemies still both retreat with the attacker.
    *  Default: false (matches the printed rulebook). */
   collisionAllEnemies: boolean;
+  /** When true, the board cells are placed on a random superellipse curve
+   *  instead of a perfect square. Default: false (standard square board). */
+  randomBoard: boolean;
 }
 
 export interface DiceRoll { value: number; chain: number; /** 1st, 2nd, 3rd consecutive 6 */ }

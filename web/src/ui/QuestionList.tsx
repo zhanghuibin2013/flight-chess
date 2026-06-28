@@ -190,6 +190,7 @@ export default function QuestionList({ rows, setRows, pendingCount, onSaved, onR
 
       {/* Header */}
       <div className="qb-header">
+        <a href="#" className="qb-back-link">← {t('admin.backToLobby')}</a>
         <h1>{t('admin.listTitle')}</h1>
         <div className="qb-header-actions">
           <button className="ghost qb-refresh-btn" onClick={handleRefresh} disabled={refreshing || saving} title={t('admin.refresh')}>

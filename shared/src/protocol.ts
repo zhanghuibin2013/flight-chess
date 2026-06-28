@@ -63,6 +63,7 @@ export const RoomSetOptsZ = z.object({
   // Collision rule toggles. Optional for backward compatibility — server
   // applies spec defaults when fields are omitted.
   collisionAllEnemies: z.boolean().optional(),
+  randomBoard: z.boolean().optional(),
 });
 export const TurnRollZ = z.object({});
 export const TurnTakeoffZ = z.object({ planeIndex: z.number().int().min(0).max(3) });

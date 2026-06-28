@@ -84,6 +84,62 @@ const SPECIAL_OFFSETS: Record<number, Cell['kind']> = {
 const LO = 0.08;
 const HI = 0.92;
 
+// ---- Seeded PRNG (mulberry32) ----
+
+function mulberry32(seed: number): () => number {
+  let s = seed | 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ---- Shape-varying ring position ----
+// Uses a superellipse (Lamé curve) parameterized by exponent n:
+//   |x|^n + |y|^n = 1
+// - n → ∞: perfect square
+// - n = 2: circle
+// - n = 1: diamond
+// - n = 1.5: rounded diamond
+// Random n between 1.8 and 3.5 gives varied shapes from circular to squarish.
+// Plus per-cell noise for organic feel.
+
+function wavyRingPosition(idx: number, rng: () => number, n: number): { x: number; y: number } {
+
+  // Map cell index to angle (0 to 2π), starting from bottom-left going clockwise.
+  // Red takeoff (idx=0) at angle 225° (bottom-left), going clockwise.
+  const totalAngle = (idx / RING_LEN) * Math.PI * 2;
+  const angle = totalAngle + (Math.PI * 0.75); // offset so red starts at bottom-left
+
+  // Superellipse parametric form:
+  // x = cos(angle)^(2/n) * sign(cos(angle))
+  // y = sin(angle)^(2/n) * sign(sin(angle))
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+  const absCos = Math.abs(cosA);
+  const absSin = Math.abs(sinA);
+  const power = 2 / n;
+  const sx = Math.sign(cosA) * Math.pow(absCos, power);
+  const sy = Math.sign(sinA) * Math.pow(absSin, power);
+
+  // Scale to fit within [LO, HI] range, centered at 0.5.
+  const scale = (HI - LO) / 2;
+  const cx = 0.5 + sx * scale;
+  const cy = 0.5 - sy * scale; // flip Y for screen coordinates
+
+  // Add per-cell noise for organic feel (±3% of board size).
+  const noise = 0.03;
+  const jitterX = (rng() - 0.5) * noise;
+  const jitterY = (rng() - 0.5) * noise;
+
+  return {
+    x: Math.max(0.02, Math.min(0.98, cx + jitterX)),
+    y: Math.max(0.02, Math.min(0.98, cy + jitterY)),
+  };
+}
+
 function ringPosition(idx: number): { x: number; y: number } {
   const side = Math.floor(idx / QUADRANT_LEN);
   const within = idx % QUADRANT_LEN;
@@ -180,13 +236,16 @@ export interface BuiltBoard extends BoardSnapshot {
   shortcutForColor(color: Color, ringIdx: number): { exitRingIdx: number } | null;
 }
 
-export function buildBoard(): BuiltBoard {
+export function buildBoard(seed?: number): BuiltBoard {
   const cells: Cell[] = [];
   const ring: number[] = [];
+  const rng = seed !== undefined ? mulberry32(seed) : null;
+  // Shape exponent: 1.8 = round/circular, 3.5 = squarish. Generated once per board.
+  const shapeN = rng ? 1.8 + rng() * 1.7 : 0;
 
   // ----- Ring cells -----
   for (let i = 0; i < RING_LEN; i++) {
-    const pos = ringPosition(i);
+    const pos = rng ? wavyRingPosition(i, rng, shapeN) : ringPosition(i);
     const cellColor = colorAtRingIndex(i); // decorative color for ALL ring cells
 
     let kind: Cell['kind'] = 'normal';

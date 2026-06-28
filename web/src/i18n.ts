@@ -69,6 +69,7 @@ const ZH: Dict = {
   'lobby.host':             '房主',
   'lobby.seats':            '人数',
   'lobby.adminLink':        '题库录入',
+  'lobby.practiceLink':     '📚 题目练习',
 
   // Question-bank admin page
   'admin.title':              '题库录入',
@@ -109,6 +110,7 @@ const ZH: Dict = {
 
   // List / Add page separation
   'admin.listTitle':          '题库管理',
+  'admin.backToLobby':        '返回大厅',
   'admin.addTitle':           '添加题目',
   'admin.addQuestion':        '+ 添加题目',
   'admin.backToList':         '返回列表',
@@ -164,6 +166,18 @@ const ZH: Dict = {
   'admin.ir.err.recognizeFailed': '识别失败：{msg}',
   'admin.ir.err.saveFailed':  '保存设置失败：{msg}',
 
+  // Practice mode
+  'practice.title':           '题目练习',
+  'practice.submit':          '提交答案',
+  'practice.correct':         '✓ 回答正确！',
+  'practice.wrong':           '✗ 回答错误',
+  'practice.correctAnswer':   '正确答案是 {ans}',
+  'practice.correctAnswers':  '正确答案是 {ans}',
+  'practice.prev':            '上一题',
+  'practice.next':            '下一题',
+  'practice.score':           '答对 {correct}/{total}',
+  'practice.reviewing':       '回顾第 {n}/{total} 题',
+
   // Room
   'room.title':             '房间',
   'room.options':           '游戏设置',
@@ -181,6 +195,7 @@ const ZH: Dict = {
   'room.victory.timed':     '限时赛 — 时间到时回家最多者胜',
   'room.collisionAllEnemies':     '撞机时全部敌机回库',
   'room.collisionAllEnemiesHint': '默认关闭（说明书规则）：若撞上对方机叠，仅其中一架回库；开启后，整叠敌机一起回库',
+  'room.randomBoard':             '随机棋盘形状',
   'room.addBot':            '加入电脑',
   'room.removeBot':         '移除',
   'player.bot':             '电脑',
@@ -454,6 +469,7 @@ const EN: Dict = {
   'lobby.host':             'Host',
   'lobby.seats':            'Seats',
   'lobby.adminLink':        'Question Bank',
+  'lobby.practiceLink':     '📚 Practice',
 
   // Question-bank admin page
   'admin.title':              'Question Bank Editor',
@@ -494,6 +510,7 @@ const EN: Dict = {
 
   // List / Add page separation
   'admin.listTitle':          'Question Bank',
+  'admin.backToLobby':        'Back to Lobby',
   'admin.addTitle':           'Add Question',
   'admin.addQuestion':        '+ Add Question',
   'admin.backToList':         'Back to List',
@@ -549,6 +566,18 @@ const EN: Dict = {
   'admin.ir.err.recognizeFailed': 'Recognition failed: {msg}',
   'admin.ir.err.saveFailed':  'Failed to save settings: {msg}',
 
+  // Practice mode
+  'practice.title':           'Practice',
+  'practice.submit':          'Submit Answer',
+  'practice.correct':         '✓ Correct!',
+  'practice.wrong':           '✗ Wrong',
+  'practice.correctAnswer':   'Correct answer: {ans}',
+  'practice.correctAnswers':  'Correct answers: {ans}',
+  'practice.prev':            'Previous',
+  'practice.next':            'Next',
+  'practice.score':           'Score: {correct}/{total}',
+  'practice.reviewing':       'Reviewing #{n}/{total}',
+
   // Room
   'room.title':             'Room',
   'room.options':           'Game Options',
@@ -566,6 +595,7 @@ const EN: Dict = {
   'room.victory.timed':     'Timed — most planes home when time is up',
   'room.collisionAllEnemies':     'Collision returns all enemies on cell',
   'room.collisionAllEnemiesHint': 'Default off (rulebook): only one of an enemy stack returns. On: the entire enemy stack returns to hangar.',
+  'room.randomBoard':             'Random board shape',
   'room.addBot':            'Add Computer',
   'room.removeBot':         'Remove',
   'player.bot':             'Computer',

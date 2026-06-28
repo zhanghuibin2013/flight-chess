@@ -63,6 +63,8 @@ const DEFAULT_OPTIONS: GameOptions = {
   // Defaults follow the printed rulebook (说明书):
   //  - 撞机：仅撞迭机时只有一架对方机退回；普通撞机两机都退（false）
   collisionAllEnemies: false,
+  //  - 棋盘形状：默认使用标准方形棋盘（false）
+  randomBoard: false,
 };
 
 export class RoomRegistry {
@@ -274,7 +276,10 @@ export class RoomRegistry {
       onEvent: cb.onEvent,
       onGameOver: cb.onGameOver,
     };
-    room.engine = new GameEngine(room.options, seats, questions, wrapped);
+    const seed = room.options.randomBoard
+      ? [...room.id].reduce((acc, ch) => ((acc << 5) - acc + ch.charCodeAt(0)) | 0, 0)
+      : undefined;
+    room.engine = new GameEngine(room.options, seats, questions, wrapped, seed);
     driver = new BotDriver(room.engine, (color) => this.isSeatBot(room, color));
     room.botDriver = driver;
     // Engine constructor doesn't emit onState, so kick the driver explicitly
@@ -306,7 +311,10 @@ export class RoomRegistry {
       onEvent: cb.onEvent,
       onGameOver: cb.onGameOver,
     };
-    room.engine = new GameEngine(room.options, seats, questions, wrapped);
+    const seed = room.options.randomBoard
+      ? [...room.id].reduce((acc, ch) => ((acc << 5) - acc + ch.charCodeAt(0)) | 0, 0)
+      : undefined;
+    room.engine = new GameEngine(room.options, seats, questions, wrapped, seed);
     driver = new BotDriver(room.engine, (color) => this.isSeatBot(room, color));
     room.botDriver = driver;
     // Auto-ready everyone since they explicitly chose to play again.

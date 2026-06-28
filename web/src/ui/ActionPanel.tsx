@@ -131,6 +131,11 @@ export default function ActionPanel() {
   const locale = useStore(s => s.locale) as Locale;
   const t = useT();
 
+  // Two-step move on touch devices: first tap selects (shows preview), second tap confirms.
+  const [tappedPlane, setTappedPlane] = useState<number | null>(null);
+  const [tappedTakeoff, setTappedTakeoff] = useState<number | null>(null);
+  const isTouch = typeof window !== 'undefined' && 'ontouchstart' in window;
+
   if (!state || !mySeat) {
     // Spectator / not seated: still allow exit.
     return (
@@ -296,16 +301,36 @@ export default function ActionPanel() {
             </div>
           )}
           <div className="plane-row">
-            {myPrompt.planes.map(idx => (
-              <button
-                key={idx}
-                className={`plane-btn plane-${mySeat} ${showSuggest && moveSuggestion?.idx === idx ? 'recommended' : ''}`}
-                onClick={() => choosePlane(idx)}
-                onMouseEnter={() => setHoverPlane(idx)}
-                onMouseLeave={() => setHoverPlane(null)}
-              >#{idx + 1}</button>
-            ))}
+            {myPrompt.planes.map(idx => {
+              const tapped = tappedPlane === idx;
+              return (
+                <button
+                  key={idx}
+                  className={`plane-btn plane-${mySeat}${tapped ? ' plane-tapped' : ''}${showSuggest && moveSuggestion?.idx === idx ? ' recommended' : ''}`}
+                  onClick={() => {
+                    if (isTouch) {
+                      if (tapped) { choosePlane(idx); setTappedPlane(null); }
+                      else { setHoverPlane(idx); setTappedPlane(idx); }
+                    } else {
+                      choosePlane(idx);
+                    }
+                  }}
+                  onMouseEnter={() => !isTouch && setHoverPlane(idx)}
+                  onMouseLeave={() => !isTouch && setHoverPlane(null)}
+                >#{idx + 1}</button>
+              );
+            })}
           </div>
+          {isTouch && tappedPlane !== null && (
+            <div className="confirm-row">
+              <button className="confirm-btn" onClick={() => { choosePlane(tappedPlane); setTappedPlane(null); }}>
+                ✓ {t('game.confirmMove')}
+              </button>
+              <button className="ghost" onClick={() => { setHoverPlane(null); setTappedPlane(null); }}>
+                {t('game.cancel')}
+              </button>
+            </div>
+          )}
         </div>
       )}
       {myPrompt?.kind === 'takeoff' && (
@@ -334,14 +359,34 @@ export default function ActionPanel() {
             </div>
           )}
           <div className="plane-row">
-            {myPrompt.planes.map(idx => (
-              <button
-                key={idx}
-                className={`plane-btn plane-${mySeat} ${showSuggest && takeoffSuggestion?.idx === idx ? 'recommended' : ''}`}
-                onClick={() => chooseTakeoff(idx)}
-              >#{idx + 1}</button>
-            ))}
+            {myPrompt.planes.map(idx => {
+              const tapped = tappedTakeoff === idx;
+              return (
+                <button
+                  key={idx}
+                  className={`plane-btn plane-${mySeat}${tapped ? ' plane-tapped' : ''}${showSuggest && takeoffSuggestion?.idx === idx ? ' recommended' : ''}`}
+                  onClick={() => {
+                    if (isTouch) {
+                      if (tapped) { chooseTakeoff(idx); setTappedTakeoff(null); }
+                      else { setTappedTakeoff(idx); }
+                    } else {
+                      chooseTakeoff(idx);
+                    }
+                  }}
+                >#{idx + 1}</button>
+              );
+            })}
           </div>
+          {isTouch && tappedTakeoff !== null && (
+            <div className="confirm-row">
+              <button className="confirm-btn" onClick={() => { chooseTakeoff(tappedTakeoff); setTappedTakeoff(null); }}>
+                ✓ {t('game.confirmTakeoff')}
+              </button>
+              <button className="ghost" onClick={() => setTappedTakeoff(null)}>
+                {t('game.cancel')}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

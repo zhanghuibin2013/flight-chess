@@ -239,16 +239,41 @@ export default function ImageRecognitionPanel({ onAdd }: Props) {
   };
 
   // ---- Recognition (per item) ----
+  // Concurrency limiter: at most 3 AI requests at once, to avoid overwhelming
+  // the upstream API when the user triggers batch recognition.
+  const activeRef = useRef(0);
+  const waitQueueRef = useRef<(() => void)[]>([]);
+  const MAX_CONCURRENT = 3;
+
+  const acquireSlot = (): Promise<void> => {
+    if (activeRef.current < MAX_CONCURRENT) {
+      activeRef.current++;
+      return Promise.resolve();
+    }
+    return new Promise(resolve => { waitQueueRef.current.push(resolve); });
+  };
+
+  const releaseSlot = () => {
+    const next = waitQueueRef.current.shift();
+    if (next) {
+      next();
+    } else {
+      activeRef.current--;
+    }
+  };
 
   const recognizeItem = async (itemUid: string) => {
-    let item: QueueItem | undefined;
-    setQueue(prev => {
-      item = prev.find(it => it.uid === itemUid);
-      if (!item) return prev;
-      return prev.map(it => it.uid === itemUid ? { ...it, status: 'recognizing' as ItemStatus, error: null } : it);
-    });
+    // Snapshot the item's data BEFORE the async boundary so we don't depend
+    // on setQueue being called synchronously.
+    const currentQueue = queue;
+    const item = currentQueue.find(it => it.uid === itemUid);
     if (!item) return;
 
+    setQueue(prev => prev.map(it =>
+      it.uid === itemUid ? { ...it, status: 'recognizing' as ItemStatus, error: null } : it
+    ));
+
+    await acquireSlot();
     try {
       const res = await fetch('/admin/ai/recognize', {
         method: 'POST',
@@ -269,6 +294,8 @@ export default function ImageRecognitionPanel({ onAdd }: Props) {
           ? { ...it, status: 'error' as ItemStatus, error: (e as Error).message }
           : it
       ));
+    } finally {
+      releaseSlot();
     }
   };
 
@@ -279,6 +306,7 @@ export default function ImageRecognitionPanel({ onAdd }: Props) {
   const totalQuestions = queue.reduce((sum, it) => sum + it.questions.length, 0);
 
   const recognizeAll = () => {
+    // Fire all — the semaphore inside recognizeItem limits actual concurrency.
     pendingItems.forEach(it => recognizeItem(it.uid));
   };
 

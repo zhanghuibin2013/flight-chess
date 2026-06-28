@@ -5,6 +5,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { QuestionRow, QuestionKind } from '@fkzz/shared';
 import { useT } from '../i18n';
+import ImageRecognitionPanel from './ImageRecognitionPanel';
+import type { RecognizedQuestion } from './ImageRecognitionPanel';
 
 interface DraftRow {
   id: string;
@@ -157,6 +159,18 @@ export default function QuestionBankAdmin() {
     setRows(prev => [emptyDraft(kind, t), ...prev]);
   };
 
+  const handleAddRecognized = (questions: RecognizedQuestion[]) => {
+    const drafts: DraftRow[] = questions.map(q => ({
+      id: q.id || newId(),
+      prompt: q.prompt,
+      options: q.options.slice(),
+      kind: q.kind,
+      answerIndex: q.answerIndex,
+      answerIndexes: q.answerIndexes.slice(),
+    }));
+    setRows(prev => [...drafts, ...prev]);
+  };
+
   const updateRow = (idx: number, patch: Partial<DraftRow>) => {
     setRows(prev => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
   };
@@ -284,6 +298,8 @@ export default function QuestionBankAdmin() {
           </button>
         </div>
       </div>
+
+      <ImageRecognitionPanel onAdd={handleAddRecognized} />
 
       <div className="qb-toolbar">
         <div className="qb-add-group">

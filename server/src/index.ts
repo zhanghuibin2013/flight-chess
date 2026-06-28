@@ -10,6 +10,8 @@ import type { QuestionRow } from '@fkzz/shared';
 
 import { RoomRegistry } from './rooms.js';
 import { bindHandlers } from './net/handlers.js';
+import { loadAIConfig, saveAIConfig, recognizeQuestions } from './ai.js';
+import type { AIConfig } from './ai.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const __filename = url.fileURLToPath(import.meta.url);
@@ -142,6 +144,91 @@ const httpServer = http.createServer((req, res) => {
       });
       return;
     }
+    res.statusCode = 405;
+    res.end();
+    return;
+  }
+
+  // ---- Admin: AI configuration & image recognition ----
+  // GET  /admin/ai/config    -> current AI config (apiKey masked)
+  // POST /admin/ai/config    -> save AI config
+  // POST /admin/ai/recognize -> send image for AI question recognition
+  const aiUrlBase = req.url.split('?')[0];
+  if (aiUrlBase === '/admin/ai/config' || aiUrlBase === '/admin/ai/recognize') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return; }
+
+    if (aiUrlBase === '/admin/ai/config') {
+      if (req.method === 'GET') {
+        const cfg = loadAIConfig();
+        // Mask the API key for security — show first 4 chars + ****
+        const masked = cfg.apiKey
+          ? cfg.apiKey.slice(0, 4) + '****'
+          : '';
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ ...cfg, apiKey: masked }));
+        return;
+      }
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; if (body.length > 100_000) req.destroy(); });
+        req.on('end', () => {
+          try {
+            const parsed = JSON.parse(body) as Partial<AIConfig>;
+            const existing = loadAIConfig();
+            const updated: AIConfig = {
+              provider: parsed.provider === 'anthropic' ? 'anthropic' : 'openai',
+              baseUrl: (parsed.baseUrl ?? existing.baseUrl).trim(),
+              // If the masked key is sent back, or the field is left blank,
+              // keep the existing real key.
+              apiKey: parsed.apiKey && !parsed.apiKey.endsWith('****') && parsed.apiKey.trim() !== ''
+                ? parsed.apiKey
+                : existing.apiKey,
+              model: (parsed.model ?? existing.model).trim(),
+            };
+            saveAIConfig(updated);
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ ok: true }));
+          } catch (e) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
+          }
+        });
+        return;
+      }
+      res.statusCode = 405;
+      res.end();
+      return;
+    }
+
+    if (aiUrlBase === '/admin/ai/recognize' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; if (body.length > 10_000_000) req.destroy(); });
+      req.on('end', async () => {
+        try {
+          const { image, mimeType } = JSON.parse(body) as { image?: string; mimeType?: string };
+          if (!image || !mimeType) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ ok: false, error: '缺少 image 或 mimeType' }));
+            return;
+          }
+          const config = loadAIConfig();
+          const questions = await recognizeQuestions(image, mimeType, config);
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: true, questions, count: questions.length }));
+        } catch (e) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: false, error: (e as Error).message }));
+        }
+      });
+      return;
+    }
+
     res.statusCode = 405;
     res.end();
     return;

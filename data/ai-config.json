@@ -1,0 +1,6 @@
+{
+  "provider": "openai",
+  "baseUrl": "https://llm-5sep96aowbzyttdf.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+  "apiKey": "sk-ws-H.RYPPXXP.CfQW.MEUCIG9H2FcGy3Uf_j968VI_nUJkcQnLJ28AfQJVOpXQ5AvEAiEA4xaFN4sGZ9QWZvaxt_aeWAU8Kvo1MRuFuMd9zWxnBBY",
+  "model": "qwen3.7-plus"
+}
